@@ -1,0 +1,14 @@
+# Графический интерфейс (раздел 3.2)
+customtkinter>=5.2.2
+# Drag & Drop (раздел 6); при отсутствии импорт работает через диалоги
+tkinterdnd2>=0.4.2
+
+# Тесты (раздел 57)
+pytest>=8.0
+
+# На Linux дополнительно может потребоваться системный пакет:
+#   sudo apt install python3-tk
+# FFmpeg и FFprobe устанавливаются отдельно (раздел 46):
+#   Windows:  https://ffmpeg.org/download.html
+#   Linux:    sudo apt install ffmpeg
+#   macOS:    brew install ffmpeg

@@ -1,0 +1,30 @@
+# Сборка PyInstaller: и промежуточные файлы, и готовый .exe вместе с
+# распакованной туда сборкой FFmpeg (это сотни мегабайт двоичных файлов).
+build/
+dist/
+
+# Байт-код и кэши
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Окружения
+.venv/
+venv/
+env/
+
+# Пользовательские данные, которые появляются при работе программы
+logs/*
+!logs/.gitkeep
+profiles/*
+!profiles/.gitkeep
+config.json
+capabilities.json
+
+# Служебное
+*.ffgui
+Thumbs.db
+.DS_Store
