@@ -26,9 +26,17 @@ class Tooltip:
         self.delay = delay
         self._after_id: str | None = None
 
+        #: Нажата ли кнопка мыши: пока пользователь тянет ползунок, подсказка
+        #: не всплывает, даже если он замер на середине движения.
+        self._pressed = False
+
         widget.bind("<Enter>", self._schedule, add="+")
+        # Подсказка не должна ехать за курсором: пока мышь в движении, окно
+        # спрятано, и появляется оно только когда курсор остановился.
+        widget.bind("<Motion>", self._on_motion, add="+")
         widget.bind("<Leave>", self._hide, add="+")
-        widget.bind("<ButtonPress>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._on_press, add="+")
+        widget.bind("<ButtonRelease>", self._on_release, add="+")
         # Уничтоженный виджет не пришлёт <Leave>: подсказка осталась бы на
         # экране, если её показали прямо перед пересборкой списка.
         widget.bind("<Destroy>", self._hide, add="+")
@@ -55,6 +63,21 @@ class Tooltip:
         except tkinter.TclError:  # pragma: no cover - виджет уже уничтожен
             return
         hint.show(self.widget, self.text, x, y)
+
+    def _on_motion(self, _event=None) -> None:
+        """Курсор поехал — прячем и отсчитываем паузу заново."""
+        hint.hide()
+        if not self._pressed:
+            self._schedule()
+
+    def _on_press(self, _event=None) -> None:
+        """Пользователь взялся за параметр — подсказка мешает и уходит."""
+        self._pressed = True
+        self._hide()
+
+    def _on_release(self, _event=None) -> None:
+        self._pressed = False
+        self._schedule()
 
     def _hide(self, _event=None) -> None:
         self._cancel()

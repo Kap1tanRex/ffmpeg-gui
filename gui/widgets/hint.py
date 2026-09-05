@@ -13,6 +13,10 @@
 Здесь таких окон быть не может: оно ровно одно, любое ``hide()`` его прячет,
 а пока подсказка видна, сторож раз в четверть секунды проверяет, что курсор
 всё ещё над тем виджетом, который её заказывал.
+
+Второе правило: подсказка не сопровождает движущийся курсор. Любое движение
+мыши по окну — над кнопкой, надписью или пустым местом — убирает её сразу, и
+появляется она только тогда, когда курсор остановился (см. :mod:`.tooltip`).
 """
 
 from __future__ import annotations
@@ -45,6 +49,10 @@ _window: ctk.CTkToplevel | None = None
 _labels: dict[str, ctk.CTkLabel] = {}
 _owner: tkinter.Misc | None = None
 _watch_id: str | None = None
+#: Видна ли подсказка прямо сейчас. Отдельный флаг, а не запрос к Tk: сторож
+#: движения мыши срабатывает на каждое перемещение курсора по окну.
+_visible = False
+_motion_guard = False
 
 
 def _build(master) -> None:
@@ -84,8 +92,29 @@ def prepare(master) -> None:
     """Готовит окно подсказки заранее — до первого наведения курсора."""
     try:
         _build(master)
+        _install_motion_guard(master)
     except tkinter.TclError:  # pragma: no cover - окно уже закрывается
         pass
+
+
+def _install_motion_guard(master) -> None:
+    """Любое движение мыши по окну убирает подсказку.
+
+    Подсказки висят только на части элементов, и без общего правила при
+    переходе курсора на соседний виджет — кнопку, надпись, пустое место —
+    подсказка оставалась бы на экране до срабатывания сторожа. Обработчик
+    намеренно предельно дешёвый: он вызывается на каждое перемещение курсора.
+    """
+    global _motion_guard
+    if _motion_guard:
+        return
+    master.winfo_toplevel().bind_all("<Motion>", _on_any_motion, add="+")
+    _motion_guard = True
+
+
+def _on_any_motion(_event=None) -> None:
+    if _visible:
+        hide()
 
 
 def show(
@@ -103,7 +132,7 @@ def show(
     ``master`` — виджет, над которым стоит курсор: пока подсказка видна, сторож
     следит именно за ним.
     """
-    global _owner
+    global _owner, _visible
     if not text:
         return
     sections = [("body", text)] if isinstance(text, str) else list(text)
@@ -124,6 +153,7 @@ def show(
         hide()
         return
     _owner = master
+    _visible = True
     _start_watch()
 
 
@@ -152,9 +182,10 @@ def _render(sections: list[tuple[str, str]]) -> None:
 
 def hide() -> None:
     """Прячет подсказку. Безопасно вызывать сколько угодно раз."""
-    global _owner
+    global _owner, _visible
     _stop_watch()
     _owner = None
+    _visible = False
     if _window is None:
         return
     try:
@@ -216,8 +247,9 @@ def _pointer_over(widget: tkinter.Misc) -> bool:
 
 
 def _reset() -> None:
-    global _window, _labels, _owner, _watch_id
+    global _window, _labels, _owner, _watch_id, _visible
     _window = None
     _labels = {}
     _owner = None
     _watch_id = None
+    _visible = False

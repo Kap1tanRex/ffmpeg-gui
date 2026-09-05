@@ -35,6 +35,11 @@ class ScrollFrame(ctk.CTkScrollableFrame):
     """``CTkScrollableFrame``, который не рвёт картинку при быстрой прокрутке."""
 
     def __init__(self, *args, **kwargs) -> None:
+        # CustomTkinter отступает от края внутрь на величину скругления рамки
+        # (corner_radius + border_width). У прозрачной области это скругление
+        # не видно, зато содержимое уезжает вправо, и карточки внутри раздела
+        # перестают совпадать по левому краю с карточками снаружи.
+        kwargs.setdefault("corner_radius", 0)
         super().__init__(*args, **kwargs)
         self._pending_y = 0
         self._pending_x = 0

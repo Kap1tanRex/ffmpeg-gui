@@ -32,11 +32,12 @@ from .tabs.trim_tab import TrimTab
 from .theming import font, pair
 from .update_window import UpdateWindow
 from .widgets.drop_zone import DND_AVAILABLE, DropZone
+from .widgets import hint
 from .widgets.file_list import FileList
 from .widgets.navigation import NavigationView
 from .widgets.progress_bar import ProgressPanel
 from .widgets.status_strip import StatusStrip
-from .widgets.surface import GAP, PAGE_PAD, Card, button, muted, severity_color
+from .widgets.surface import CARD_PADX, GAP, PAGE_PAD, Card, button, muted, severity_color
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,9 @@ class MainWindow(_RootWindow):
         self._build_status()
         self.tabs.set_command(self._on_section_changed)
         self._on_section_changed()
+        # Окно подсказки и общее правило «движется мышь — подсказки нет»
+        # ставятся один раз на всё приложение.
+        hint.prepare(self)
 
         self._subscribe()
         self._bind_shortcuts()
@@ -183,7 +187,11 @@ class MainWindow(_RootWindow):
     def _build_header(self) -> None:
         """Шапка раздела: имя открытого раздела и строка о его назначении."""
         header = ctk.CTkFrame(self.content, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=PAGE_PAD + 4, pady=(PAGE_PAD, 4))
+        # Заголовок раздела выравнивается не по краю карточек, а по их
+        # заголовкам: «Сжатие» и «Файлы» должны стоять на одной вертикали.
+        header.grid(
+            row=0, column=0, sticky="ew", padx=(PAGE_PAD + CARD_PADX, PAGE_PAD), pady=(PAGE_PAD, 4)
+        )
         header.grid_columnconfigure(0, weight=1)
 
         self.section_title = ctk.CTkLabel(
