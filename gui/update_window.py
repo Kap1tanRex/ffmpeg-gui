@@ -23,6 +23,7 @@ from ..core.models import format_size
 from ..core.release_notes import NoteSection, parse_release_notes
 from ..services.update_service import ReleaseInfo, UpdateError, UpdateService
 from .theming import font, pair, radius
+from .widgets.scroll import ScrollFrame
 from .widgets.surface import GAP, PAGE_PAD, Card, button, hairline, muted
 
 WINDOW_SIZE = "720x760"
@@ -131,7 +132,7 @@ class UpdateWindow(ctk.CTkToplevel):
             row=0, column=0, sticky="ew", padx=PAGE_PAD + 4, pady=(PAGE_PAD, GAP)
         )
 
-        self.body = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.body = ScrollFrame(self, fg_color="transparent")
         self.body.grid(row=1, column=0, sticky="nsew", padx=PAGE_PAD, pady=0)
         self.body.grid_columnconfigure(0, weight=1)
 

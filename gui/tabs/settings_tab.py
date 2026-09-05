@@ -19,8 +19,9 @@ from ...core.models import format_size
 from ...core.naming import DEFAULT_TEMPLATE, TOKENS, name_values, render_name
 from ...services import shell_integration
 from ...services.ffmpeg_updater import SOURCE_LABELS, SOURCES, app_ffmpeg_dir
-from ..theming import font, pair
+from ..theming import UI_SCALES, font, pair, scale_label
 from ..widgets.status_strip import DOT, health_color
+from ..widgets.scroll import ScrollFrame
 from ..widgets.surface import GAP, PAGE_PAD, Card, button, muted, severity_color
 from ..widgets.tooltip import attach_help
 
@@ -32,13 +33,13 @@ _THEME_LABELS = {"System": "Системная", "Light": "Светлая", "Dar
 _THEME_BY_LABEL = {v: k for k, v in _THEME_LABELS.items()}
 
 #: Ширина колонки подписей — строки настроек читаются как таблица.
-_LABEL_WIDTH = 260
+_LABEL_WIDTH = 285
 
 #: Подпись источника сборок -> значение настройки.
 _SOURCE_BY_LABEL = {label: key for key, label in SOURCE_LABELS.items()}
 
 
-class SettingsTab(ctk.CTkScrollableFrame):
+class SettingsTab(ScrollFrame):
     def __init__(self, master, app, on_settings_changed) -> None:
         super().__init__(master, fg_color="transparent")
         self.app = app
@@ -432,19 +433,28 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self.theme_menu = self._menu(body, list(_THEME_LABELS.values()), self._on_theme_changed)
         self.theme_menu.grid(row=0, column=1, sticky="w", pady=5)
 
-        self._caption(body, "Параллельных заданий", 1)
-        self.parallel_menu = self._menu(body, ["1", "2", "3", "4"], self._on_parallel_changed)
-        self.parallel_menu.grid(row=1, column=1, sticky="w", pady=5)
+        self._caption(body, "Масштаб интерфейса", 1)
+        self.scale_menu = self._menu(body, list(UI_SCALES), self._on_scale_changed)
+        self.scale_menu.grid(row=1, column=1, sticky="w", pady=5)
+        attach_help(self.scale_menu, self.app, "ui_scale")
+        # Масштаб, с которым окно было собрано: с ним и сравниваем выбор.
+        self._scale_at_start = self.app.settings.ui_scale
+        self.scale_hint = muted(body, "")
+        self.scale_hint.grid(row=1, column=2, sticky="w", padx=(12, 0))
 
-        self._caption(body, "При существующем файле", 2)
+        self._caption(body, "Параллельных заданий", 2)
+        self.parallel_menu = self._menu(body, ["1", "2", "3", "4"], self._on_parallel_changed)
+        self.parallel_menu.grid(row=2, column=1, sticky="w", pady=5)
+
+        self._caption(body, "При существующем файле", 3)
         self.overwrite_menu = self._menu(
             body, list(_OVERWRITE_LABELS.values()), self._on_overwrite_changed
         )
-        self.overwrite_menu.grid(row=2, column=1, sticky="w", pady=5)
+        self.overwrite_menu.grid(row=3, column=1, sticky="w", pady=5)
 
-        self._caption(body, "Каталог результатов по умолчанию", 3)
+        self._caption(body, "Каталог результатов по умолчанию", 4)
         output_frame = ctk.CTkFrame(body, fg_color="transparent")
-        output_frame.grid(row=3, column=1, sticky="ew", pady=5)
+        output_frame.grid(row=4, column=1, sticky="ew", pady=5)
         output_frame.grid_columnconfigure(0, weight=1)
         self.output_dir_entry = ctk.CTkEntry(output_frame, font=font("small"))
         self.output_dir_entry.grid(row=0, column=0, sticky="ew")
@@ -453,20 +463,20 @@ class SettingsTab(ctk.CTkScrollableFrame):
             row=0, column=1, padx=(8, 0)
         )
 
-        self._caption(body, "Шаблон имени файла", 4)
+        self._caption(body, "Шаблон имени файла", 5)
         self.template_entry = ctk.CTkEntry(body, font=font("small"))
-        self.template_entry.grid(row=4, column=1, sticky="ew", pady=5)
+        self.template_entry.grid(row=5, column=1, sticky="ew", pady=5)
         self.template_entry.bind("<FocusOut>", lambda _e: self._on_template_changed())
         self.template_entry.bind("<Return>", lambda _e: self._on_template_changed())
         attach_help(self.template_entry, self.app, "output_template")
 
         self.template_hint = muted(body, "")
-        self.template_hint.grid(row=5, column=1, sticky="w", pady=(0, 4))
+        self.template_hint.grid(row=6, column=1, sticky="w", pady=(0, 4))
         muted(
             body,
             "Доступно: " + ", ".join("{" + name + "}" for name in TOKENS),
             wraplength=430,
-        ).grid(row=6, column=1, sticky="w", pady=(0, 2))
+        ).grid(row=7, column=1, sticky="w", pady=(0, 2))
 
     def _on_template_changed(self) -> None:
         """Сохраняет шаблон и тут же показывает, какое имя из него выйдет."""
@@ -489,6 +499,24 @@ class SettingsTab(ctk.CTkScrollableFrame):
     def _on_theme_changed(self, value: str) -> None:
         self.app.update_settings(theme=_THEME_BY_LABEL.get(value, "System"))
         self.on_settings_changed()
+
+    def _refresh_scale_hint(self, changed: bool) -> None:
+        self.scale_hint.configure(
+            text="Применится при следующем запуске" if changed else "",
+            text_color=severity_color("warn") if changed else pair("fg.secondary"),
+        )
+
+    def _on_scale_changed(self, value: str) -> None:
+        """Запоминает масштаб; применяется он при следующем запуске.
+
+        Менять масштаб на лету CustomTkinter умеет только наполовину: он
+        пересчитывает размеры своих холстов, но не пересобирает раскладку —
+        виджеты остаются на прежних местах, и карточки распадаются на
+        обрывки. Поэтому масштаб выставляется до создания окна.
+        """
+        scale = UI_SCALES.get(value, 1.0)
+        self.app.update_settings(ui_scale=scale)
+        self._refresh_scale_hint(changed=abs(scale - self._scale_at_start) > 1e-6)
 
     def _on_parallel_changed(self, value: str) -> None:
         self.app.update_settings(parallel_jobs=int(value))
@@ -785,6 +813,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
     def _load_from_settings(self) -> None:
         settings = self.app.settings
         self.theme_menu.set(_THEME_LABELS.get(settings.theme, "Системная"))
+        self.scale_menu.set(scale_label(settings.ui_scale))
         self.parallel_menu.set(str(settings.parallel_jobs))
         self.overwrite_menu.set(_OVERWRITE_LABELS.get(settings.overwrite_policy, "Спрашивать"))
         self.output_dir_entry.insert(0, settings.output_directory)

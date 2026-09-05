@@ -30,6 +30,7 @@ from ...core.models import (
 )
 from ...core.profiles import Profile
 from ..theming import font, pair
+from ..widgets.scroll import ScrollFrame
 from ..widgets.surface import GAP, Card, button, muted
 from ._controls import AudioPanel, VideoPanel
 from ._filters_panel import FilterPanel
@@ -125,7 +126,7 @@ _SUBTITLE_LABELS = {
 }
 
 
-class ConvertTab(ctk.CTkScrollableFrame):
+class ConvertTab(ScrollFrame):
     """Прокручиваемая вкладка: содержимое никогда не обрезается по высоте,
     а кнопка запуска живёт в закреплённой панели действий главного окна."""
 

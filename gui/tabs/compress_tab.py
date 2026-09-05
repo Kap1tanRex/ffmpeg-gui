@@ -10,6 +10,7 @@ import customtkinter as ctk
 from ...core.models import Job, MediaFile, Operation
 from ...core.profiles import Profile
 from ..theming import font
+from ..widgets.scroll import ScrollFrame
 from ..widgets.surface import GAP, Card, button, muted
 from ._controls import AudioPanel, VideoPanel
 from ._filters_panel import FilterPanel
@@ -17,7 +18,7 @@ from ._dialogs import show_command
 from ._estimate import OutputEstimator
 
 
-class CompressTab(ctk.CTkScrollableFrame):
+class CompressTab(ScrollFrame):
     """Прокручиваемый раздел: содержимое никогда не обрезается по высоте,
     а кнопка запуска живёт в закреплённой панели действий главного окна."""
 

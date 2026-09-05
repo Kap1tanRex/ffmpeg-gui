@@ -18,6 +18,7 @@ from collections.abc import Callable
 
 import customtkinter as ctk
 
+from .scroll import ScrollFrame
 from ..theming import font, pair, radius
 
 
@@ -126,7 +127,7 @@ def _describe(media) -> str:
     return media.summary_line()
 
 
-class FileList(ctk.CTkScrollableFrame):
+class FileList(ScrollFrame):
     """Прокручиваемый список файлов с выбором, отметками и удалением."""
 
     def __init__(

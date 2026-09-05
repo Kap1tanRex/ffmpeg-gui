@@ -22,14 +22,14 @@
     "state.info": "#58A6FF",
     "border": "#2C313A",
     "border.strong": "#3A414D",
-    "radius.sm": "7",
-    "radius.md": "10",
-    "radius.lg": "14",
+    "radius.sm": "8",
+    "radius.md": "12",
+    "radius.lg": "16",
     "font.family": "Segoe UI",
     "font.family.mono": "Cascadia Mono",
-    "font.size": "13",
-    "font.size.small": "12",
-    "font.size.large": "15",
-    "font.size.hero": "22"
+    "font.size": "14",
+    "font.size.small": "13",
+    "font.size.large": "16",
+    "font.size.hero": "26"
   }
 }

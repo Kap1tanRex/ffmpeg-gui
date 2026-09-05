@@ -18,6 +18,7 @@ import customtkinter as ctk
 from ...core.models import Job, JobStatus, ProgressInfo
 from ..theming import font, pair, radius
 from ..widgets.status_strip import DOT, health_color
+from ..widgets.scroll import ScrollFrame
 from ..widgets.surface import GAP, Card, button, muted
 
 _RETRYABLE = (JobStatus.FAILED.value, JobStatus.CANCELLED.value)
@@ -79,7 +80,7 @@ class QueueTab(ctk.CTkFrame):
         toolbar.grid_columnconfigure(1, weight=1)
         button(toolbar, "Очистить завершённые", self._clear_finished).grid(row=0, column=0)
 
-        self.list_frame = ctk.CTkScrollableFrame(self.card.body, fg_color="transparent")
+        self.list_frame = ScrollFrame(self.card.body, fg_color="transparent")
         self.list_frame.grid(row=1, column=0, sticky="nsew", pady=(GAP, 0))
         self.list_frame.grid_columnconfigure(0, weight=1)
 

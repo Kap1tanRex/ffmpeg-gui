@@ -14,6 +14,7 @@ from PIL import Image
 
 from ...core.models import AudioOptions, MediaFile, Operation, TrimOptions, VideoOptions, format_timecode, parse_timecode
 from ..theming import font, pair
+from ..widgets.scroll import ScrollFrame
 from ..widgets.surface import GAP, Card, button, muted
 from ..widgets.timecode_entry import attach_timecode_mask
 from ..widgets.tooltip import attach_help
@@ -25,7 +26,7 @@ THUMBNAIL_COUNT = 6
 THUMBNAIL_WIDTH = 140
 
 
-class TrimTab(ctk.CTkScrollableFrame):
+class TrimTab(ScrollFrame):
     """Прокручиваемая вкладка: содержимое никогда не обрезается по высоте,
     а кнопка запуска живёт в закреплённой панели действий главного окна."""
 
@@ -138,7 +139,7 @@ class TrimTab(ctk.CTkScrollableFrame):
         self.thumb_target_menu.set("Начало")
         self.thumb_target_menu.pack(side="left", padx=(10, 0))
 
-        self.thumbnails_frame = ctk.CTkScrollableFrame(
+        self.thumbnails_frame = ScrollFrame(
             body, orientation="horizontal", height=116, fg_color="transparent"
         )
         # См. FileList: запрошенная высота держится только на внутреннем холсте.

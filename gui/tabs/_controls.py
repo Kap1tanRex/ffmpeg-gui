@@ -23,7 +23,7 @@ from ..theming import font, pair
 from ..widgets.surface import Card, muted, severity_color
 from ..widgets.tooltip import attach_help
 
-AUTO_LABEL = "Авто (кодек определяется автоматически)"
+AUTO_LABEL = "Авто — подобрать автоматически"
 
 # Режим дорожки называется словами, а не значением FFmpeg: наружу панель
 # по-прежнему отдаёт "encode" / "copy" / "none" (см. :meth:`VideoPanel.mode`).
@@ -35,7 +35,7 @@ _MODE_LABELS: dict[str, str] = {
 _MODE_BY_LABEL: dict[str, str] = {label: mode for mode, label in _MODE_LABELS.items()}
 
 #: Ширина колонки подписей внутри панели — строки выстраиваются в таблицу.
-_LABEL_WIDTH = 150
+_LABEL_WIDTH = 168
 
 # Раздел «часто используемые»: базовый список — только H.264/H.265 и то,
 # что видеокарта умеет ускорять. Остальное доступно в расширенном режиме.

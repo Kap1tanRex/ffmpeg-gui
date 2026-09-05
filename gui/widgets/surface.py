@@ -19,10 +19,10 @@ import customtkinter as ctk
 from ..theming import color, font, pair, radius
 
 #: Отступы внутри карточки и между карточками (сетка 4 px, как в ZapretGUI).
-CARD_PADX = 18
-CARD_PADY = 16
-GAP = 12
-PAGE_PAD = 16
+CARD_PADX = 20
+CARD_PADY = 18
+GAP = 14
+PAGE_PAD = 18
 
 
 class Card(ctk.CTkFrame):

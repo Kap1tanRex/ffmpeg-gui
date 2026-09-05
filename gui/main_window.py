@@ -40,7 +40,7 @@ from .widgets.surface import GAP, PAGE_PAD, Card, button, muted, severity_color
 
 log = logging.getLogger(__name__)
 
-WINDOW_MIN_SIZE = (1040, 720)
+WINDOW_MIN_SIZE = (1120, 760)
 
 #: Значки разделов — из системных шрифтов, чтобы не тянуть графические ресурсы.
 SECTION_ICONS = {
@@ -99,6 +99,9 @@ class MainWindow(_RootWindow):
         # Тема применяется до создания виджетов: CustomTkinter читает её
         # значения в момент построения каждого виджета, а не при отрисовке.
         theming.apply(app.settings.theme, user_dir=app.store.directory / "themes")
+        # Масштаб выставляется до создания окна: CustomTkinter умеет менять его
+        # и на лету, но геометрия окна тогда останется от прежнего значения.
+        theming.set_ui_scale(app.settings.ui_scale)
 
         super().__init__()
         self.app = app
@@ -108,7 +111,7 @@ class MainWindow(_RootWindow):
         self._ffmpeg_dialog_open = False
 
         self.title(f"{self.tr('app.title', 'FFmpeg GUI')} {APP_VERSION}")
-        self.geometry("1240x880")
+        self.geometry("1340x920")
         self.minsize(*WINDOW_MIN_SIZE)
 
         self.grid_columnconfigure(0, weight=1)

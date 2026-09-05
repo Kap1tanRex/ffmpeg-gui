@@ -25,7 +25,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 SETTINGS_VERSION = 1
 
 #: Репозиторий обновлений: пока не задан, проверка при запуске молчит.
@@ -51,6 +51,7 @@ class Settings:
     version: int = SETTINGS_VERSION
     language: str = "ru"
     theme: str = "System"
+    ui_scale: float = 1.0
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
     output_directory: str = ""
