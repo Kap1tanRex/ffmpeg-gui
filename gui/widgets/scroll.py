@@ -43,7 +43,11 @@ class ScrollFrame(ctk.CTkScrollableFrame):
         super().__init__(*args, **kwargs)
         self._pending_y = 0
         self._pending_x = 0
+        #: Последний запрос от полосы прокрутки ("moveto", "0.42") — она шлёт
+        #: их на каждое движение мыши, до сотни раз в секунду.
+        self._pending_view: tuple = ()
         self._flush_id: str | None = None
+        self._scrollbar.configure(command=self._on_scrollbar)
 
     # CustomTkinter вешает этот обработчик через bind_all на каждый
     # прокручиваемый блок, а нужный из них выбирает _check_if_valid_scroll.
@@ -65,8 +69,24 @@ class ScrollFrame(ctk.CTkScrollableFrame):
         else:
             if self._parent_canvas.yview() == (0.0, 1.0):
                 return
+            # Колесо и ползунок в пределах одного кадра — редкость, но
+            # выигрывать должно последнее движение, а не то, что записано.
+            self._pending_view = ()
             self._pending_y += step
 
+        self._schedule_flush()
+
+    def _on_scrollbar(self, *args) -> None:
+        """Запрос от полосы прокрутки: запоминаем и применяем раз в кадр.
+
+        Перетаскивание ползунка идёт мимо колеса и потому мимо накопителя
+        выше: без этого каждое движение мыши двигало холст напрямую.
+        """
+        self._pending_view = args
+        self._pending_y = 0
+        self._schedule_flush()
+
+    def _schedule_flush(self) -> None:
         if self._flush_id is None:
             self._flush_id = self.after(FRAME_MS, self._flush_scroll)
 
@@ -81,17 +101,28 @@ class ScrollFrame(ctk.CTkScrollableFrame):
         return -1 if getattr(event, "num", 5) == 4 else 1
 
     def _flush_scroll(self) -> None:
+        """Применяет накопленное одним движением.
+
+        Перерисовку намеренно не форсируем: Tk сливает несколько сдвигов,
+        пришедших до следующего простоя, в одну отрисовку. Принудительный
+        ``update_idletasks()`` после каждого шага эту склейку ломал — двенадцать
+        шагов подряд занимали 44 мс вместо 19 и рисовались по отдельности,
+        отчего содержимое и расползалось на глазах.
+        """
         self._flush_id = None
+        view, self._pending_view = self._pending_view, ()
         dy, self._pending_y = self._pending_y, 0
         dx, self._pending_x = self._pending_x, 0
         try:
-            if dy:
+            if view:
+                if self._orientation == "horizontal":
+                    self._parent_canvas.xview(*view)
+                else:
+                    self._parent_canvas.yview(*view)
+            elif dy:
                 self._parent_canvas.yview("scroll", dy, "units")
             if dx:
                 self._parent_canvas.xview("scroll", dx, "units")
-            if dy or dx:
-                # Доводим перерисовку до конца, пока не пришёл следующий шаг.
-                self._parent_canvas.update_idletasks()
         except tkinter.TclError:  # pragma: no cover - виджет уже уничтожен
             return
 
