@@ -30,15 +30,26 @@ OFFSET_Y = 8
 #: Как часто сторож проверяет, что курсор всё ещё над виджетом.
 WATCH_INTERVAL_MS = 250
 
+#: Порядок и оформление строк подсказки. Ключи совпадают с ролями из
+#: :mod:`core.help_registry`: заголовок отвечает «зачем», дальше идут
+#: описание, значения и — выделенное цветом — влияние на результат.
+_ROLES: tuple[tuple[str, str, bool], ...] = (
+    ("title", "fg.primary", True),
+    ("body", "fg.secondary", False),
+    ("values", "fg.secondary", False),
+    ("effect", "state.info", False),
+    ("warning", "state.warn", False),
+)
+
 _window: ctk.CTkToplevel | None = None
-_label: ctk.CTkLabel | None = None
+_labels: dict[str, ctk.CTkLabel] = {}
 _owner: tkinter.Misc | None = None
 _watch_id: str | None = None
 
 
 def _build(master) -> None:
     """Создаёт окно подсказки. Вызывается один раз при сборке интерфейса."""
-    global _window, _label
+    global _window, _labels
     if _window is not None:
         try:
             if _window.winfo_exists():
@@ -53,21 +64,20 @@ def _build(master) -> None:
         window.attributes("-topmost", True)
     except tkinter.TclError:  # pragma: no cover - зависит от оконного менеджера
         pass
-    label = ctk.CTkLabel(
-        window,
-        text="",
-        justify="left",
-        anchor="w",
-        fg_color=pair("bg.elevated"),
-        text_color=pair("fg.primary"),
-        corner_radius=radius("sm"),
-        wraplength=360,
-        font=font("small"),
-        padx=10,
-        pady=7,
-    )
-    label.pack()
-    _window, _label = window, label
+    body = ctk.CTkFrame(window, fg_color=pair("bg.elevated"), corner_radius=radius("sm"))
+    body.pack()
+    labels: dict[str, ctk.CTkLabel] = {}
+    for role, color, bold in _ROLES:
+        labels[role] = ctk.CTkLabel(
+            body,
+            text="",
+            justify="left",
+            anchor="w",
+            text_color=pair(color),
+            wraplength=360,
+            font=font("small", bold=bold),
+        )
+    _window, _labels = window, labels
 
 
 def prepare(master) -> None:
@@ -78,20 +88,30 @@ def prepare(master) -> None:
         pass
 
 
-def show(master, text: str, x: int, y: int, *, above: bool = False) -> None:
-    """Показывает подсказку с текстом ``text`` в экранных координатах.
+def show(
+    master,
+    text: "str | list[tuple[str, str]]",
+    x: int,
+    y: int,
+    *,
+    above: bool = False,
+) -> None:
+    """Показывает подсказку в экранных координатах.
 
+    ``text`` — либо простая строка, либо список ``(роль, текст)``: роли
+    перечислены в :data:`_ROLES` и определяют шрифт и цвет строки.
     ``master`` — виджет, над которым стоит курсор: пока подсказка видна, сторож
     следит именно за ним.
     """
     global _owner
     if not text:
         return
+    sections = [("body", text)] if isinstance(text, str) else list(text)
     try:
         _build(master)
-        if _window is None or _label is None:
+        if _window is None or not _labels:
             return
-        _label.configure(text=text)
+        _render(sections)
         # Спрятанное окно ещё не имеет фактического размера — высоту для
         # раскрытия вверх берём из запрошенной менеджером геометрии.
         _window.update_idletasks()
@@ -105,6 +125,29 @@ def show(master, text: str, x: int, y: int, *, above: bool = False) -> None:
         return
     _owner = master
     _start_watch()
+
+
+def _render(sections: list[tuple[str, str]]) -> None:
+    """Раскладывает строки по ролям; лишние прячет, не уничтожая."""
+    filled = dict(sections)
+    first = True
+    for role, _color, _bold in _ROLES:
+        label = _labels.get(role)
+        if label is None:
+            continue
+        text = filled.get(role, "")
+        if not text:
+            label.pack_forget()
+            continue
+        label.configure(text=text)
+        label.pack(anchor="w", padx=10, pady=(9 if first else 5, 0))
+        first = False
+    # Нижний отступ держит последняя строка: у CTkLabel его иначе нет.
+    for role, _color, _bold in reversed(_ROLES):
+        label = _labels.get(role)
+        if label is not None and label.winfo_manager():
+            label.pack_configure(pady=(label.pack_info()["pady"][0], 9))
+            break
 
 
 def hide() -> None:
@@ -173,8 +216,8 @@ def _pointer_over(widget: tkinter.Misc) -> bool:
 
 
 def _reset() -> None:
-    global _window, _label, _owner, _watch_id
+    global _window, _labels, _owner, _watch_id
     _window = None
-    _label = None
+    _labels = {}
     _owner = None
     _watch_id = None

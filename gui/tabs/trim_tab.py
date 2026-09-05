@@ -294,8 +294,8 @@ class TrimTab(ctk.CTkScrollableFrame):
             return
         self.file_label.configure(text=f"{media.name}   •   длительность {format_timecode(media.duration)}")
         if not self.output_entry.get().strip():
-            suggestion = self.app.filesystem.suggest_output(
-                media.path, self.app.settings.output_directory or None, media.path.suffix.lstrip("."), "_trimmed"
+            suggestion = self.app.suggest_output_path(
+                media, media.path.suffix.lstrip("."), "_trimmed", video=self.video_panel.get_options()
             )
             self.output_entry.insert(0, str(suggestion))
         self.estimator.schedule()

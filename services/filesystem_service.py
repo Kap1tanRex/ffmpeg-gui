@@ -15,6 +15,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.naming import render_name
+
 log = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = {
@@ -107,11 +109,25 @@ class FilesystemService:
         output_dir: str | Path | None,
         extension: str,
         suffix: str,
+        template: str = "",
+        values: dict[str, str] | None = None,
     ) -> Path:
+        """Путь результата. ``template`` — шаблон имени из настроек.
+
+        Без шаблона имя складывается как раньше: имя исходника плюс суффикс
+        операции.
+        """
         input_path = Path(input_path)
         directory = Path(output_dir) if output_dir else input_path.parent
         extension = extension.lstrip(".")
-        return directory / f"{input_path.stem}{suffix}.{extension}"
+        if template:
+            tokens = dict(values or {})
+            tokens.setdefault("имя", input_path.stem)
+            tokens.setdefault("суффикс", suffix)
+            stem = render_name(template, tokens)
+        else:
+            stem = f"{input_path.stem}{suffix}"
+        return directory / f"{stem}.{extension}"
 
     def unique_path(self, path: Path) -> Path:
         """Раздел 31: 'file.mp4' -> 'file (2).mp4', если файл существует."""

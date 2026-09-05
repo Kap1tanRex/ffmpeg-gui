@@ -32,6 +32,7 @@ from ...core.profiles import Profile
 from ..theming import font, pair
 from ..widgets.surface import GAP, Card, button, muted
 from ._controls import AudioPanel, VideoPanel
+from ._filters_panel import FilterPanel
 from ._dialogs import show_command
 from ._estimate import OutputEstimator
 
@@ -69,6 +70,18 @@ _CONVERT_PRESETS: list[tuple[str, VideoOptions, AudioOptions, str | None]] = [
         AudioOptions(mode="encode", codec="auto", bitrate="128k"),
         None,
     ),
+    (
+        "Только звук (MP3)",
+        VideoOptions(mode="none"),
+        AudioOptions(mode="encode", codec="mp3", bitrate="192k"),
+        "mp3",
+    ),
+    (
+        "Анимация GIF",
+        VideoOptions(mode="encode", codec="gif", width=480, fps=12.0),
+        AudioOptions(mode="none"),
+        "gif",
+    ),
 ]
 _PRESET_HINTS: dict[str, str] = {
     "Без потерь (только контейнер, без перекодирования)": (
@@ -77,6 +90,14 @@ _PRESET_HINTS: dict[str, str] = {
     "Высокое качество (минимальные потери)": "Перекодирование почти без потери качества, файл может быть больше.",
     "Баланс (качество/размер)": "Разумный компромисс между качеством и размером файла.",
     "Малый размер": "Минимальный размер файла ценой заметной потери качества.",
+    "Только звук (MP3)": (
+        "Видео выбрасывается целиком — остаётся звуковая дорожка. "
+        "Из часового видео получится файл примерно на 85 МиБ."
+    ),
+    "Анимация GIF": (
+        "Ширина 480 и 12 кадров в секунду, палитра считается по самому ролику. "
+        "GIF весит в разы больше видео той же длины — берите короткие фрагменты."
+    ),
 }
 
 # Раздел «самые популярные»: подпись -> имя мультиплексора FFmpeg.
@@ -140,6 +161,7 @@ class ConvertTab(ctk.CTkScrollableFrame):
         self._build_actions()
         self.video_panel.on_changed = self.estimator.schedule
         self.audio_panel.on_changed = self.estimator.schedule
+        self.filter_panel.on_changed = self.estimator.schedule
         self._refresh_preset_values()
         self._apply_preset(_CONVERT_PRESETS[0][0])
         self.estimator.clear("выберите файл")
@@ -210,6 +232,10 @@ class ConvertTab(ctk.CTkScrollableFrame):
         self.audio_panel = AudioPanel(frame, self.app)
         self.audio_panel.grid(row=0, column=1, sticky="new")
         self.audio_panel.on_user_change = self._on_panel_changed
+
+        self.filter_panel = FilterPanel(frame, self.app)
+        self.filter_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(GAP, 0))
+        self.filter_panel.on_user_change = self._on_panel_changed
 
     def _build_subtitle_row(self) -> None:
         card = Card(self, title="Субтитры")
@@ -462,8 +488,8 @@ class ConvertTab(ctk.CTkScrollableFrame):
         container = self._current_container()
         if not self.output_entry.get().strip():
             extension = self.app.compat.extension_for_muxer(container)
-            suggestion = self.app.filesystem.suggest_output(
-                media.path, self.app.settings.output_directory or None, extension, "_converted"
+            suggestion = self.app.suggest_output_path(
+                media, extension, "_converted", video=self.video_panel.get_options()
             )
             self.output_entry.insert(0, str(suggestion))
         self._update_copy_hint()
@@ -486,7 +512,7 @@ class ConvertTab(ctk.CTkScrollableFrame):
         audio = self.audio_panel.get_options()
         subtitles = SubtitleOptions(mode=_SUBTITLE_LABELS.get(self.subtitle_menu.get(), SubtitleMode.COPY))
         output = self.output_entry.get().strip() or None if media is self.media else None
-        return self.app.build_job(
+        job = self.app.build_job(
             media,
             Operation.CONVERT.value,
             container=self._current_container(),
@@ -495,6 +521,9 @@ class ConvertTab(ctk.CTkScrollableFrame):
             subtitles=subtitles,
             output_path=output,
         )
+        if job is not None:
+            self.filter_panel.apply_to(job)
+        return job
 
     def _build_job(self) -> Job | None:
         if self.media is None:

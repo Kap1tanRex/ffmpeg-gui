@@ -37,6 +37,7 @@ class Event(Enum):
     FFMPEG_UPDATE_CHECKED = auto()
     FFMPEG_UPDATE_PROGRESS = auto()
     FFMPEG_UPDATE_FINISHED = auto()
+    WATCH_FILES = auto()
 
 
 class EventBus:

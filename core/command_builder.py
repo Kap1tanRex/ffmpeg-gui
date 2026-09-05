@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .capabilities import FFmpegCapabilities
 from .compatibility import CompatibilityService
-from .models import Job, MediaFile, SubtitleMode, parse_bitrate
+from .models import Job, MediaFile, StreamType, SubtitleMode, parse_bitrate
 
 
 @dataclass
@@ -75,6 +75,18 @@ class CommandBuilder:
 
         args: list[str] = [binary or self.ffmpeg_binary]
         args += self._global_options(for_execution)
+
+        # Склейка без перекодирования — совсем другая команда: один вход,
+        # список файлов, и никаких энкодеров.
+        if job.concat and job.concat_list:
+            return args + [
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(job.concat_list),
+                "-c", "copy",
+                str(output),
+            ]
+
         args += self._input_section(job)
         args += self._map_section(job)
         args += self._video_section(job)
@@ -130,6 +142,10 @@ class CommandBuilder:
 
         for input_file in job.input_files:
             args += ["-i", str(input_file)]
+
+        # Водяной знак — второй вход; порядок важен, на него ссылается [1:v].
+        if job.overlay_path:
+            args += ["-i", str(job.overlay_path)]
 
         if job.subtitles.mode is SubtitleMode.BURN and job.subtitles.burn_source:
             # Файл субтитров подключается фильтром, а не отдельным входом.
@@ -231,9 +247,7 @@ class CommandBuilder:
         for key, value in video.extra_options.items():
             args += [f"-{key.lstrip('-')}", str(value)]
 
-        filters = self.build_video_filters(job)
-        if filters:
-            args += ["-vf", ",".join(filters)]
+        args += self._filter_args(job)
 
         # Сохранение цветовых характеристик HDR (раздел 41).
         args += self._color_args(job)
@@ -273,6 +287,120 @@ class CommandBuilder:
         if self.compat.supports_crf(encoder):
             return ["-crf", text]
         return ["-q:v", text]
+
+    #: Положение водяного знака -> выражение overlay=x:y. ``M`` — отступ.
+    OVERLAY_POSITIONS: dict[str, str] = {
+        "tl": "{m}:{m}",
+        "tr": "W-w-{m}:{m}",
+        "bl": "{m}:H-h-{m}",
+        "br": "W-w-{m}:H-h-{m}",
+        "center": "(W-w)/2:(H-h)/2",
+    }
+
+    #: К чему приводятся куски перед склейкой, если у них разный звук.
+    CONCAT_RATE = 48000
+
+    def _concat_filter_args(self, job: Job, filters: list[str]) -> list[str]:
+        """Граф склейки с перекодированием.
+
+        Фильтр ``concat`` отказывается работать, если у кусков не совпадают
+        размер кадра, соотношение пикселей или параметры звука, — а куски
+        как раз потому и перекодируются, что они разные. Поэтому каждый
+        вход сначала приводится к общему виду: вписывается в кадр первого
+        файла с чёрными полями (обрезать чужой кадр никто не просил), а звук
+        сводится к одной частоте и раскладке.
+        """
+        count = len(job.input_files)
+        audio = 1 if job.concat_audio else 0
+        stream = None
+        if job.source:
+            stream = next((s for s in job.source.streams if s.type is StreamType.VIDEO), None)
+        width = job.video.width or (stream.width if stream else None)
+        height = job.video.height or (stream.height if stream else None)
+
+        parts: list[str] = []
+        # Дорожки чередуются: видео, звук, видео, звук — так их ждёт concat.
+        pads: list[str] = []
+        for index in range(count):
+            if width and height:
+                parts.append(
+                    f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1[v{index}]"
+                )
+                pads.append(f"[v{index}]")
+            else:
+                pads.append(f"[{index}:v]")
+            if audio:
+                parts.append(
+                    f"[{index}:a]aresample={self.CONCAT_RATE},"
+                    f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]"
+                )
+                pads.append(f"[a{index}]")
+
+        head = "".join(pads)
+        parts.append(f"{head}concat=n={count}:v=1:a={audio}[cv]" + ("[ca]" if audio else ""))
+        video_label = "[cv]"
+        if filters:
+            parts.append(f"[cv]{','.join(filters)}[v]")
+            video_label = "[v]"
+
+        maps = ["-map", video_label]
+        if audio:
+            maps += ["-map", "[ca]"]
+        return ["-filter_complex", ";".join(parts), *maps]
+
+    def _filter_args(self, job: Job) -> list[str]:
+        """``-vf`` для обычного случая и ``-filter_complex`` для наложения.
+
+        Картинка поверх видео — второй вход, а простой ``-vf`` работает с
+        одним. Как только появляется наложение, потоки приходится выбирать
+        руками: после ``-map [v]`` FFmpeg перестаёт подбирать их сам.
+        """
+        filters = self.build_video_filters(job)
+
+        # Склейка с перекодированием: несколько входов сводятся в один поток
+        # фильтром concat, дальше всё как обычно.
+        if job.concat and len(job.input_files) > 1:
+            return self._concat_filter_args(job, filters)
+
+        gif = (job.container or "").lower() == "gif"
+        if not job.overlay_path and not gif:
+            return ["-vf", ",".join(filters)] if filters else []
+
+        parts = [f"[0:v]{','.join(filters) if filters else 'null'}[base]"]
+        last = "[base]"
+
+        if job.overlay_path:
+            margin = max(0, int(job.overlay_margin))
+            position = self.OVERLAY_POSITIONS.get(
+                job.overlay_position, self.OVERLAY_POSITIONS["br"]
+            ).format(m=margin)
+            mark = "[1:v]"
+            if job.overlay_opacity < 1.0:
+                parts.append(
+                    f"[1:v]format=rgba,colorchannelmixer=aa={job.overlay_opacity:.2f}[mark]"
+                )
+                mark = "[mark]"
+            # Имя последнего узла зависит от того, будет ли дальше палитра.
+            last = "[marked]" if gif else "[v]"
+            parts.append(f"[base]{mark}overlay={position}{last}")
+
+        if gif:
+            # У GIF всего 256 цветов на кадр. Палитра, посчитанная по самому
+            # ролику, отличает приличную анимацию от грязной ряби.
+            parts.append(f"{last}split[a][b]")
+            parts.append("[a]palettegen=stats_mode=diff[p]")
+            parts.append("[b][p]paletteuse=dither=bayer:bayer_scale=3[v]")
+            return ["-filter_complex", ";".join(parts), "-map", "[v]", "-an", "-sn"]
+
+        # Сюда попадаем только с наложением: без него и без GIF вышли раньше.
+        return [
+            "-filter_complex",
+            ";".join(parts),
+            "-map", "[v]",
+            "-map", "0:a?",
+            "-map", "0:s?",
+        ]
 
     def build_video_filters(self, job: Job) -> list[str]:
         """Фильтры видео (раздел 40): пользовательские + fps + scale + субтитры."""

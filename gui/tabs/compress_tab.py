@@ -12,6 +12,7 @@ from ...core.profiles import Profile
 from ..theming import font
 from ..widgets.surface import GAP, Card, button, muted
 from ._controls import AudioPanel, VideoPanel
+from ._filters_panel import FilterPanel
 from ._dialogs import show_command
 from ._estimate import OutputEstimator
 
@@ -46,6 +47,7 @@ class CompressTab(ctk.CTkScrollableFrame):
 
         self.video_panel.on_changed = self.estimator.schedule
         self.audio_panel.on_changed = self.estimator.schedule
+        self.filter_panel.on_changed = self.estimator.schedule
         self._refresh_profiles()
         self.estimator.clear("выберите файл")
 
@@ -82,6 +84,11 @@ class CompressTab(ctk.CTkScrollableFrame):
 
         self.audio_panel = AudioPanel(frame, self.app)
         self.audio_panel.grid(row=0, column=1, sticky="new")
+
+        # Обработка картинки идёт отдельной строкой во всю ширину: полей в ней
+        # больше, чем помещается в половину карточки.
+        self.filter_panel = FilterPanel(frame, self.app)
+        self.filter_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(GAP, 0))
 
     def _build_output_row(self) -> None:
         card = Card(self, title="Результат")
@@ -181,8 +188,12 @@ class CompressTab(ctk.CTkScrollableFrame):
         self.file_label.configure(text=media.name)
         self.estimator.schedule()
         if not self.output_entry.get().strip():
-            suggestion = self.app.filesystem.suggest_output(
-                media.path, self.app.settings.output_directory or None, media.path.suffix.lstrip("."), "_compressed"
+            suggestion = self.app.suggest_output_path(
+                media,
+                media.path.suffix.lstrip("."),
+                "_compressed",
+                video=self.video_panel.get_options(),
+                profile=self.profile_menu.get() if hasattr(self, "profile_menu") else "",
             )
             self.output_entry.insert(0, str(suggestion))
 
@@ -202,7 +213,7 @@ class CompressTab(ctk.CTkScrollableFrame):
         video = self.video_panel.get_options()
         audio = self.audio_panel.get_options()
         output = self.output_entry.get().strip() or None if media is self.media else None
-        return self.app.build_job(
+        job = self.app.build_job(
             media,
             Operation.COMPRESS.value,
             container=self._container_override,
@@ -210,6 +221,9 @@ class CompressTab(ctk.CTkScrollableFrame):
             audio=audio,
             output_path=output,
         )
+        if job is not None:
+            self.filter_panel.apply_to(job)
+        return job
 
     def _build_job(self) -> Job | None:
         if self.media is None:

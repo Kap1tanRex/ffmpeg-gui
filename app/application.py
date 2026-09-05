@@ -29,12 +29,19 @@ from ..core.models import (
     TrimOptions,
     VideoOptions,
 )
+from ..core.naming import name_values
 from ..core.profiles import ProfileManager
 from ..core.validator import ValidationResult, Validator
+from ..services import concat_service
 from ..services.estimate_service import EstimateService
 from ..services.ffmpeg_service import FFmpegService, SystemInfo
 from ..services.ffprobe_service import FFprobeService
-from ..services.filesystem_service import FilesystemService, ScanOptions
+from ..services.filesystem_service import (
+    AUDIO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    FilesystemService,
+    ScanOptions,
+)
 from ..services.gpu_detector import GpuInfo, detect_gpus, hardware_suffixes_for_vendor
 from ..services.ffmpeg_updater import (
     FFmpegUpdater,
@@ -43,6 +50,7 @@ from ..services.ffmpeg_updater import (
     app_ffmpeg_dir,
 )
 from ..services.update_service import UpdateService, UpdateState
+from ..services.watch_service import WatchFolder
 from ..services.preview_service import PreviewService
 from ..services.process_manager import ProcessManager
 from ..services.queue_manager import QueueCallbacks, QueueManager
@@ -135,6 +143,9 @@ class Application:
         self.update_state = UpdateState()
         self.ffmpeg_updates = FFmpegUpdater(self.settings.ffmpeg_source)
         self.ffmpeg_update_state = FFmpegUpdateState()
+        self.watcher = WatchFolder(
+            on_ready=lambda paths: self.bus.publish(Event.WATCH_FILES, paths)
+        )
 
     # -- инициализация -----------------------------------------------------
     def _setup_logging(self) -> None:
@@ -275,6 +286,112 @@ class Application:
         """Повторное определение GPU по кнопке в настройках."""
         self._detect_gpu()
         return self.gpu_info
+
+    # -- папка наблюдения ------------------------------------------------------
+    def apply_watch_settings(self) -> None:
+        """Включает или выключает наблюдение по текущим настройкам."""
+        settings = self.settings
+        directory = settings.watch_folder.strip()
+        if settings.watch_enabled and directory and Path(directory).is_dir():
+            extensions = set()
+            if settings.import_video:
+                extensions |= VIDEO_EXTENSIONS
+            if settings.import_audio:
+                extensions |= AUDIO_EXTENSIONS
+            self.watcher.extensions = {e.lstrip(".") for e in extensions}
+            self.watcher.start(directory)
+        else:
+            self.watcher.stop()
+
+    def build_concat_job(
+        self,
+        medias: list[MediaFile],
+        video: VideoOptions | None = None,
+        audio: AudioOptions | None = None,
+        output_path: str | Path | None = None,
+    ) -> Job | None:
+        """Задание склейки. Возвращает None, если склеивать нечего.
+
+        Если куски совпадают по кодекам, склейка идёт без перекодирования —
+        мгновенно и без потерь. Иначе собирается обычное задание с фильтром
+        concat, и куски пересчитываются.
+        """
+        if len(medias) < 2:
+            return None
+        copyable = concat_service.can_copy(medias)
+        first = medias[0]
+        container = self.compat.muxer_for_extension(first.path.suffix) or "matroska"
+        extension = self.compat.extension_for_muxer(container)
+
+        if output_path is None:
+            output_path = self.suggest_output_path(first, extension, "_joined", video=video)
+
+        job = Job(
+            input_files=[str(media.path) for media in medias],
+            output_file=str(output_path),
+            operation=Operation.CONVERT.value,
+            container=container,
+            video=video or VideoOptions(mode="copy"),
+            audio=audio or AudioOptions(mode="copy"),
+            source=first,
+            concat=True,
+            concat_audio=concat_service.has_audio_everywhere(medias),
+        )
+        job.label = f"Склейка: {len(medias)} файлов"
+        if copyable:
+            job.concat_list = str(
+                concat_service.write_list(
+                    [media.path for media in medias], self.filesystem.jobs_dir
+                )
+            )
+        else:
+            # Перекодирование неизбежно: копировать разнородные куски нельзя.
+            job.video = video or VideoOptions(mode="encode")
+            job.audio = audio or AudioOptions(mode="encode")
+            job.video_encoder = self.compat.resolve_encoder(
+                job.video.codec, "video", self.preferred_hw_suffixes()
+            )
+            job.audio_encoder = self.compat.resolve_encoder(job.audio.codec, "audio")
+        return job
+
+    def suggest_output_path(
+        self,
+        media,
+        extension: str,
+        suffix: str,
+        video=None,
+        profile: str = "",
+    ) -> Path:
+        """Путь результата с учётом шаблона имени из настроек.
+
+        Собран в одном месте: значения токенов нужны всем трём разделам, и
+        расходиться они не должны.
+        """
+        quality = ""
+        codec = ""
+        if video is not None:
+            codec = video.codec or ""
+            if video.quality_mode == "size" and video.target_size_mb:
+                quality = f"{video.target_size_mb:g}МиБ"
+            elif video.crf is not None:
+                quality = f"crf{int(video.crf)}"
+        values = name_values(
+            Path(media.path).stem,
+            suffix,
+            codec=codec,
+            width=getattr(video, "width", None),
+            height=getattr(video, "height", None),
+            quality=quality,
+            profile=profile,
+        )
+        return self.filesystem.suggest_output(
+            media.path,
+            self.settings.output_directory or None,
+            extension,
+            suffix,
+            self.settings.output_template,
+            values,
+        )
 
     def available_hw_suffixes(self) -> tuple[str, ...]:
         """Раздел 35: суффиксы энкодеров, под которые в системе есть видеокарта.
@@ -423,8 +540,8 @@ class Application:
         if output_path is None:
             extension = self.compat.extension_for_muxer(container)
             default_suffix = suffix if suffix is not None else self._default_suffix(operation)
-            output_path = self.filesystem.suggest_output(
-                media.path, self.settings.output_directory or None, extension, default_suffix
+            output_path = self.suggest_output_path(
+                media, extension, default_suffix, video=video
             )
 
         job = Job(
@@ -439,6 +556,9 @@ class Application:
             source=media,
             overwrite_policy=self.settings.overwrite_policy,
             stream_map=stream_map or [],
+            # Разбор исходника на видеокарте: «auto» — сам FFmpeg выберет
+            # доступный декодер, а при отказе очередь повторит задание без него.
+            hwaccel="auto" if self.settings.hardware_decoding else None,
         )
 
         if video.mode == "encode":
@@ -549,6 +669,7 @@ class Application:
 
     # -- завершение ----------------------------------------------------------
     def shutdown(self) -> None:
+        self.watcher.stop()
         self.queue.shutdown()
         self.estimate_service.cancel()
         self.updates.cancel()

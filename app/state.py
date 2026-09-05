@@ -19,11 +19,13 @@ import logging
 import os
 import sys
 from dataclasses import asdict, dataclass, fields
+
+from ..core.naming import DEFAULT_TEMPLATE
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 SETTINGS_VERSION = 1
 
 #: Репозиторий обновлений: пока не задан, проверка при запуске молчит.
@@ -60,8 +62,12 @@ class Settings:
     import_images: bool = False
     auto_probe: bool = True
     last_profile: str = ""
+    output_template: str = DEFAULT_TEMPLATE
     show_tooltips: bool = True
     auto_hardware_encoding: bool = False
+    hardware_decoding: bool = False
+    watch_folder: str = ""
+    watch_enabled: bool = False
     default_crf: float = 23.0
     show_all_codecs: bool = False
     check_updates_on_start: bool = True

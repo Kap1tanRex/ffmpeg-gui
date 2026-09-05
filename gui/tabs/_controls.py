@@ -17,9 +17,10 @@ from collections.abc import Callable
 
 import customtkinter as ctk
 
+from ...core.help_registry import crf_quality
 from ...core.models import AudioOptions, VideoOptions
 from ..theming import font, pair
-from ..widgets.surface import Card, muted
+from ..widgets.surface import Card, muted, severity_color
 from ..widgets.tooltip import attach_help
 
 AUTO_LABEL = "Авто (кодек определяется автоматически)"
@@ -204,14 +205,18 @@ class VideoPanel(Card):
         self.codec_menu = ctk.CTkOptionMenu(
             body,
             values=[AUTO_LABEL],
-            command=lambda _v: (self._refresh_presets(), self._notify_user_change()),
+            command=lambda _v: (
+                self._refresh_presets(),
+                self._refresh_crf_quality(),
+                self._notify_user_change(),
+            ),
             width=320,
             anchor="w",
             font=font("small"),
             dropdown_font=font("small"),
         )
         self.codec_menu.grid(row=row, column=1, sticky="ew", pady=3)
-        attach_help(self.codec_menu, app, "auto_hardware")
+        attach_help(self.codec_menu, app, "codec")
         row += 1
 
         _caption(body, "Качество", row)
@@ -226,6 +231,7 @@ class VideoPanel(Card):
         )
         self.quality_menu.set(_QUALITY_LABELS["crf"])
         self.quality_menu.grid(row=row, column=1, sticky="ew", pady=3)
+        attach_help(self.quality_menu, app, "quality_mode")
         row += 1
 
         self._crf_caption = _caption(body, "Значение CRF", row)
@@ -255,7 +261,9 @@ class VideoPanel(Card):
         attach_help(self.crf_value_label, app, "crf")
         row += 1
 
-        self._crf_hint = muted(body, "Меньше значение — выше качество и больше файл")
+        # Само число ни о чём не говорит: 23 — это много или мало, видно только
+        # по результату. Строка ниже отвечает на этот вопрос словами и цветом.
+        self._crf_hint = muted(body, "")
         self._crf_hint.grid(row=row, column=1, sticky="w", pady=(0, 2))
         row += 1
 
@@ -283,12 +291,15 @@ class VideoPanel(Card):
         )
         self.two_pass_check.select()
         self.two_pass_check.grid(row=0, column=2)
+        attach_help(self.size_entry, app, "target_size")
+        attach_help(self.two_pass_check, app, "two_pass")
         row += 1
 
         self._size_hint = muted(body, "Битрейт подбирается под указанный размер")
         self._size_hint.grid(row=row, column=1, sticky="w", pady=(0, 2))
         row += 1
         self._apply_quality_visibility()
+        self._refresh_crf_quality()
 
         _caption(body, "Preset", row)
         self.preset_menu = ctk.CTkOptionMenu(
@@ -391,6 +402,17 @@ class VideoPanel(Card):
 
     def _on_crf_slider(self, value: float) -> None:
         self.crf_value_label.configure(text=str(int(value)))
+        self._refresh_crf_quality()
+
+    def _refresh_crf_quality(self) -> None:
+        """Подпись качества под ползунком: что это число значит для картинки.
+
+        Шкала зависит от кодека — у AV1 и VP9 она до 63, а не до 51, и то же
+        число там означает совсем другое качество.
+        """
+        codec, _encoder = self._current_choice()
+        label, severity = crf_quality(self.crf_slider.get(), codec)
+        self._crf_hint.configure(text=label, text_color=severity_color(severity))
 
     def refresh_encoders(self) -> None:
         caps = self.app.capabilities
@@ -424,6 +446,7 @@ class VideoPanel(Card):
         """Раздел настроек: подставить новое CRF по умолчанию (для уже открытых разделов)."""
         self.crf_slider.set(value)
         self.crf_value_label.configure(text=str(int(value)))
+        self._refresh_crf_quality()
         self._notify_changed()
 
     def _current_choice(self) -> CodecChoice:
@@ -474,6 +497,7 @@ class VideoPanel(Card):
         self._apply_quality_visibility()
         self.crf_slider.set(video.crf if video.crf is not None else 23)
         self.crf_value_label.configure(text=str(int(video.crf if video.crf is not None else 23)))
+        self._refresh_crf_quality()
         if video.preset:
             self.preset_menu.set(video.preset)
         if self.width_entry is not None:
@@ -593,6 +617,7 @@ class AudioPanel(Card):
             checkbox_height=18,
         )
         self.normalize_check.grid(row=row, column=1, sticky="w", pady=3)
+        attach_help(self.normalize_check, app, "normalize")
         row += 1
 
         muted(body, "Одна громкость у разных записей").grid(

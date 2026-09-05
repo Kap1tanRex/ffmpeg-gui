@@ -18,9 +18,10 @@ from . import hint
 class Tooltip:
     """Подсказка поверх произвольного виджета, с задержкой перед показом."""
 
-    def __init__(self, widget, app, text: str, delay: int = 450) -> None:
+    def __init__(self, widget, app, text, delay: int = 450) -> None:
         self.widget = widget
         self.app = app
+        #: Строка или список ``(роль, текст)`` — см. :func:`gui.widgets.hint.show`.
         self.text = text
         self.delay = delay
         self._after_id: str | None = None
@@ -67,4 +68,4 @@ def attach_help(widget, app, key: str) -> Tooltip | None:
     entry = registry.get(key)
     if entry is None:
         return None
-    return Tooltip(widget, app, entry.text())
+    return Tooltip(widget, app, entry.sections())

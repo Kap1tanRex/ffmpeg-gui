@@ -49,6 +49,8 @@ def job_signature(job: Job) -> tuple:
         astuple(job.audio),
         astuple(job.trim),
         job.subtitles.mode.value if job.subtitles else None,
+        tuple(job.filters),
+        (job.overlay_path, job.overlay_position, job.overlay_opacity),
     )
 
 

@@ -129,6 +129,9 @@ class MainWindow(_RootWindow):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(200, self.app.initialize)
+        # Наблюдение включается после старта: в конструкторе фоновый
+        # поток мог бы прислать событие в ещё не собранное окно.
+        self.after(1200, self.app.apply_watch_settings)
 
     # -- построение ---------------------------------------------------------
     def _build_navigation(self) -> None:
@@ -330,7 +333,68 @@ class MainWindow(_RootWindow):
             height=40,
             font=font("large", bold=True),
         )
-        self.action_button.grid(row=0, column=2, sticky="e")
+        self.action_button.grid(row=0, column=3, sticky="e")
+
+        # Склейка появляется только тогда, когда её есть из чего собрать:
+        # для одного файла кнопка бессмысленна и место не занимает.
+        self.join_button = button(
+            body, "⧉  Склеить", self.join_checked, width=130, height=40
+        )
+        self.join_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
+        self.join_button.grid_remove()
+
+    def _watch_files(self, paths) -> None:
+        """Файлы из папки наблюдения: импорт и постановка в очередь.
+
+        Настройки берутся у открытого раздела операций. Если открыт какой-то
+        другой раздел, файлы просто попадают в список — ставить их в очередь
+        неизвестно с какими параметрами хуже, чем не ставить вовсе.
+        """
+        self.app.import_paths(paths, async_probe=False)
+        tab = self._active_job_tab()
+        if tab is None:
+            self._set_status(f"Из папки наблюдения добавлено файлов: {len(paths)}")
+            return
+
+        known = {str(media.path): media for media in self.app.state.files}
+        jobs = []
+        for path in paths:
+            media = known.get(str(path))
+            if media is None:
+                continue
+            job = tab.build_job_for(media)
+            if job is not None:
+                jobs.append(job)
+        for job in jobs:
+            self.app.enqueue(job, autostart=False)
+        if jobs:
+            self.app.queue.start()
+            self.queue_tab.refresh_queue()
+        self._set_status(f"Из папки наблюдения в очередь: {len(jobs)}")
+
+    def join_checked(self) -> None:
+        """Склеивает отмеченные файлы в один — по порядку в списке."""
+        files = self.app.state.files
+        medias = [files[i] for i in self.file_list.checked_indices() if 0 <= i < len(files)]
+        job = self.app.build_concat_job(medias)
+        if job is None:
+            return
+        lossless = bool(job.concat_list)
+        if not messagebox.askyesno(
+            "Склейка",
+            f"Склеить файлов: {len(medias)}\n\n"
+            + (
+                "Куски совпадают по кодекам — склейка пройдёт без "
+                "перекодирования, мгновенно и без потери качества."
+                if lossless
+                else "Куски различаются по кодекам или размеру кадра, поэтому "
+                "их придётся перекодировать — это займёт столько же времени, "
+                "сколько обычное кодирование."
+            )
+            + f"\n\nРезультат: {job.output_file}",
+        ):
+            return
+        self.enqueue(job)
 
     # -- ожидаемый размер результата ------------------------------------------
     def _active_job_tab(self):
@@ -368,6 +432,13 @@ class MainWindow(_RootWindow):
         раздела и при отметке/снятии флажков."""
         current = self.tabs.get()
         label = self._start_tab_names.get(current)
+        checked = len(self.file_list.checked_indices())
+        # Склеивать есть что только внутри разделов операций и от двух файлов.
+        if label is not None and checked >= 2:
+            self.join_button.grid()
+        else:
+            self.join_button.grid_remove()
+
         if label is None:
             self.action_button.configure(
                 text=self.tr("action.none", "▶  Запустить"), state="disabled"
@@ -375,7 +446,6 @@ class MainWindow(_RootWindow):
             self.action_hint_label.configure(text="")
             return
 
-        checked = len(self.file_list.checked_indices())
         if checked >= 2:
             self.action_button.configure(
                 text=self.tr("action.batch", "▶  Обработать файлов: {n}").format(n=checked),
@@ -467,6 +537,7 @@ class MainWindow(_RootWindow):
         bus.subscribe(Event.CAPABILITIES_READY, lambda caps: self.after(0, self._capabilities_ready, caps))
         bus.subscribe(Event.GPU_DETECTED, lambda gpus: self.after(0, self._gpu_detected, gpus))
         bus.subscribe(Event.FFMPEG_MISSING, lambda: self.after(0, self._ffmpeg_missing))
+        bus.subscribe(Event.WATCH_FILES, lambda paths: self.after(0, self._watch_files, paths))
         bus.subscribe(Event.JOB_ADDED, lambda job: self.after(0, self._job_added, job))
         bus.subscribe(Event.JOB_STARTED, lambda job: self.after(0, self._job_started, job))
         bus.subscribe(

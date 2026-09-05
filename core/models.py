@@ -445,6 +445,20 @@ class Job:
     filters: list[str] = field(default_factory=list)
     audio_filters: list[str] = field(default_factory=list)
 
+    #: Склейка нескольких входов в один файл. ``concat_list`` — путь к списку
+    #: для демультиплексора: он заполнен только тогда, когда куски совпадают
+    #: по кодекам и склеиваются без перекодирования.
+    concat: bool = False
+    concat_list: str = ""
+    concat_audio: bool = True
+
+    #: Картинка поверх видео. Требует второго входа и filter_complex, поэтому
+    #: живёт отдельно от простого списка ``filters``.
+    overlay_path: str = ""
+    overlay_position: str = "br"  # tl | tr | bl | br | center
+    overlay_margin: int = 16
+    overlay_opacity: float = 1.0
+
     # Раздел 39. Stream mapping. Пустой список => автоматический выбор.
     stream_map: list[str] = field(default_factory=list)
     metadata_mode: str = "copy"  # copy | strip

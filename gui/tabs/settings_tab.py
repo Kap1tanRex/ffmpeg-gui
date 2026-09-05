@@ -16,10 +16,12 @@ import customtkinter as ctk
 from ...app.events import Event
 from ...app.state import APP_VERSION
 from ...core.models import format_size
+from ...core.naming import DEFAULT_TEMPLATE, TOKENS, name_values, render_name
+from ...services import shell_integration
 from ...services.ffmpeg_updater import SOURCE_LABELS, SOURCES, app_ffmpeg_dir
 from ..theming import font, pair
 from ..widgets.status_strip import DOT, health_color
-from ..widgets.surface import GAP, PAGE_PAD, Card, button, muted
+from ..widgets.surface import GAP, PAGE_PAD, Card, button, muted, severity_color
 from ..widgets.tooltip import attach_help
 
 _OVERWRITE_LABELS = {"ask": "Спрашивать", "overwrite": "Перезаписывать", "rename": "Переименовывать"}
@@ -52,6 +54,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self._build_general_section()
         self._build_import_section()
         self._build_updates_section()
+        self._build_automation_section()
         self._build_diagnostics_section()
 
         self._load_from_settings()
@@ -311,6 +314,20 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self.auto_hw_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
         attach_help(self.auto_hw_check, self.app, "auto_hardware")
 
+        self.hw_decode_check = ctk.CTkCheckBox(
+            body,
+            text="Разбирать входное видео силами видеокарты (ускоряет чтение 4K и HEVC)",
+            command=self._on_hw_decode_changed,
+            checkbox_width=18,
+            checkbox_height=18,
+            font=font("small"),
+        )
+        self.hw_decode_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        attach_help(self.hw_decode_check, self.app, "hwaccel")
+
+    def _on_hw_decode_changed(self) -> None:
+        self.app.update_settings(hardware_decoding=bool(self.hw_decode_check.get()))
+
     def _refresh_gpu(self) -> None:
         self.gpu_label.configure(text="Определение…")
         self.update_idletasks()
@@ -435,6 +452,39 @@ class SettingsTab(ctk.CTkScrollableFrame):
         button(output_frame, "Обзор", self._browse_output_dir, width=90).grid(
             row=0, column=1, padx=(8, 0)
         )
+
+        self._caption(body, "Шаблон имени файла", 4)
+        self.template_entry = ctk.CTkEntry(body, font=font("small"))
+        self.template_entry.grid(row=4, column=1, sticky="ew", pady=5)
+        self.template_entry.bind("<FocusOut>", lambda _e: self._on_template_changed())
+        self.template_entry.bind("<Return>", lambda _e: self._on_template_changed())
+        attach_help(self.template_entry, self.app, "output_template")
+
+        self.template_hint = muted(body, "")
+        self.template_hint.grid(row=5, column=1, sticky="w", pady=(0, 4))
+        muted(
+            body,
+            "Доступно: " + ", ".join("{" + name + "}" for name in TOKENS),
+            wraplength=430,
+        ).grid(row=6, column=1, sticky="w", pady=(0, 2))
+
+    def _on_template_changed(self) -> None:
+        """Сохраняет шаблон и тут же показывает, какое имя из него выйдет."""
+        template = self.template_entry.get().strip() or DEFAULT_TEMPLATE
+        self.app.update_settings(output_template=template)
+        self._refresh_template_hint()
+        self.watch_entry.delete(0, "end")
+        self.watch_entry.insert(0, settings.watch_folder)
+        if settings.watch_enabled:
+            self.watch_check.select()
+        self._refresh_watch_status()
+
+    def _refresh_template_hint(self) -> None:
+        example = render_name(
+            self.app.settings.output_template,
+            name_values("Отпуск 2026", "_compressed", codec="h264", height=1080, quality="crf23"),
+        )
+        self.template_hint.configure(text=f"Например: {example}.mp4")
 
     def _on_theme_changed(self, value: str) -> None:
         self.app.update_settings(theme=_THEME_BY_LABEL.get(value, "System"))
@@ -585,9 +635,116 @@ class SettingsTab(ctk.CTkScrollableFrame):
             )
         self.notes_button.configure(state="normal" if state.releases else "disabled")
 
+
+    # -- автоматизация ---------------------------------------------------------
+    def _build_automation_section(self) -> None:
+        card = self._card(
+            9, "Автоматизация", "Папка наблюдения и пункт в контекстном меню проводника"
+        )
+        body = card.label_grid()
+
+        self._caption(body, "Папка наблюдения", 0)
+        watch_frame = ctk.CTkFrame(body, fg_color="transparent")
+        watch_frame.grid(row=0, column=1, sticky="ew", pady=5)
+        watch_frame.grid_columnconfigure(0, weight=1)
+        self.watch_entry = ctk.CTkEntry(watch_frame, font=font("small"))
+        self.watch_entry.grid(row=0, column=0, sticky="ew")
+        self.watch_entry.bind("<FocusOut>", lambda _e: self._on_watch_changed())
+        button(watch_frame, "Обзор", self._browse_watch_folder, width=90).grid(
+            row=0, column=1, padx=(8, 0)
+        )
+
+        self.watch_check = ctk.CTkCheckBox(
+            body,
+            text="Ставить новые файлы в очередь автоматически",
+            command=self._on_watch_changed,
+            checkbox_width=18,
+            checkbox_height=18,
+            font=font("small"),
+        )
+        self.watch_check.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        attach_help(self.watch_check, self.app, "watch_folder")
+
+        self.watch_status = muted(body, "")
+        self.watch_status.grid(row=2, column=1, sticky="w", pady=(2, 8))
+
+        self._caption(body, "Контекстное меню", 3)
+        shell_frame = ctk.CTkFrame(body, fg_color="transparent")
+        shell_frame.grid(row=3, column=1, sticky="w", pady=5)
+        self.shell_button = button(
+            shell_frame, "Добавить в меню проводника", self._toggle_shell, width=250
+        )
+        self.shell_button.grid(row=0, column=0)
+        self.shell_status = muted(body, "")
+        self.shell_status.grid(row=4, column=1, sticky="w", pady=(2, 0))
+        self._refresh_shell_status()
+
+    def _browse_watch_folder(self) -> None:
+        path = filedialog.askdirectory(title="Папка наблюдения")
+        if path:
+            self.watch_entry.delete(0, "end")
+            self.watch_entry.insert(0, path)
+            self._on_watch_changed()
+
+    def _on_watch_changed(self) -> None:
+        self.app.update_settings(
+            watch_folder=self.watch_entry.get().strip(),
+            watch_enabled=bool(self.watch_check.get()),
+        )
+        self.app.apply_watch_settings()
+        self._refresh_watch_status()
+
+    def _refresh_watch_status(self) -> None:
+        if self.app.watcher.active:
+            text = "Наблюдение включено — новые файлы уходят в очередь"
+            color = severity_color("ok")
+        elif self.app.settings.watch_enabled:
+            text = "Папка не указана или недоступна"
+            color = severity_color("warn")
+        else:
+            text = "Наблюдение выключено"
+            color = pair("fg.secondary")
+        self.watch_status.configure(text=text, text_color=color)
+
+    def _toggle_shell(self) -> None:
+        """Пункт меню добавляется и убирается только по нажатию — сам собой
+        в реестре ничего не появляется."""
+        if not shell_integration.available():
+            self.shell_status.configure(
+                text="Доступно только в Windows", text_color=severity_color("warn")
+            )
+            return
+        try:
+            if shell_integration.is_registered():
+                shell_integration.unregister()
+            else:
+                shell_integration.register()
+        except shell_integration.ShellIntegrationError as exc:
+            self.shell_status.configure(text=str(exc), text_color=severity_color("error"))
+            return
+        self._refresh_shell_status()
+
+    def _refresh_shell_status(self) -> None:
+        if not shell_integration.available():
+            self.shell_button.configure(state="disabled")
+            self.shell_status.configure(text="Доступно только в Windows")
+            return
+        registered = shell_integration.is_registered()
+        self.shell_button.configure(
+            text="Убрать из меню проводника" if registered else "Добавить в меню проводника"
+        )
+        self.shell_status.configure(
+            text=(
+                "Пункт «Открыть в FFmpeg GUI» есть в меню видео- и аудиофайлов"
+                if registered
+                else "Запись только для текущего пользователя, права администратора не нужны"
+            ),
+            text_color=severity_color("ok") if registered else pair("fg.secondary"),
+        )
+
     # -- диагностика (раздел 47) -----------------------------------------------
     def _build_diagnostics_section(self) -> None:
-        card = self._card(8, "Диагностика", "Сведения об окружении для отчёта об ошибке")
+        card = self._card(10, "Диагностика", "Сведения об окружении для отчёта об ошибке")
         body = ctk.CTkFrame(card.body, fg_color="transparent")
         body.grid(row=0, column=0, sticky="w")
 
@@ -631,6 +788,9 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self.parallel_menu.set(str(settings.parallel_jobs))
         self.overwrite_menu.set(_OVERWRITE_LABELS.get(settings.overwrite_policy, "Спрашивать"))
         self.output_dir_entry.insert(0, settings.output_directory)
+        self.template_entry.delete(0, "end")
+        self.template_entry.insert(0, settings.output_template)
+        self._refresh_template_hint()
         if settings.recursive_import:
             self.recursive_check.select()
         if settings.import_video:
@@ -639,6 +799,8 @@ class SettingsTab(ctk.CTkScrollableFrame):
             self.audio_check.select()
         if settings.import_images:
             self.images_check.select()
+        if settings.hardware_decoding:
+            self.hw_decode_check.select()
         if settings.auto_hardware_encoding:
             self.auto_hw_check.select()
         if settings.show_all_codecs:
