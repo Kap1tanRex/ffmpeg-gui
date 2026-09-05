@@ -220,6 +220,17 @@ class Validator:
                     )
             if video.quality_mode == "bitrate" and not video.bitrate:
                 result.add("INVALID_ARGUMENT", "Выбран режим битрейта, но битрейт не задан.")
+            if video.quality_mode == "size":
+                if not video.target_size_mb or video.target_size_mb <= 0:
+                    result.add(
+                        "INVALID_ARGUMENT",
+                        "Выбран режим целевого размера, но размер не задан.",
+                    )
+                elif job.effective_duration() is None:
+                    result.add(
+                        "INVALID_ARGUMENT",
+                        "Неизвестна длительность исходника — размер не пересчитать в битрейт.",
+                    )
             for name, value in (("ширина", video.width), ("высота", video.height)):
                 if value is not None and value <= 0:
                     result.add("INVALID_ARGUMENT", f"Некорректная {name} кадра: {value}.")

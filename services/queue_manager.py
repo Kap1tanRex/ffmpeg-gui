@@ -12,6 +12,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from ..core.command_builder import CommandBuildError, CommandBuilder
 from ..core.models import Job, JobStatus, OverwritePolicy, ProgressInfo
@@ -168,28 +169,59 @@ class QueueManager:
             destination = self.filesystem.unique_path(destination)
         temp_output = self.filesystem.temp_output_for(destination)
 
-        try:
-            command = self.builder.build(job, output_override=temp_output, for_execution=True)
-        except CommandBuildError as exc:
-            job.status = JobStatus.FAILED.value
-            job.error = str(exc)
-            job.error_category = "invalid_argument"
-            self._finish(job)
-            return
+        total_duration = job.effective_duration()
 
-        job.command = command
-        total_duration = job.source.duration if job.source else None
-        if job.trim.enabled:
-            total_duration = job.trim.effective_duration() or total_duration
+        passlog = str(temp_output) + ".pass"
+        retried = False
+        while True:
+            passes = 2 if self._two_pass(job) else 1
+            try:
+                commands = [
+                    self.builder.build(
+                        job,
+                        output_override=temp_output,
+                        for_execution=True,
+                        pass_number=(number if passes > 1 else None),
+                        passlog=(passlog if passes > 1 else None),
+                    )
+                    for number in range(1, passes + 1)
+                ]
+            except CommandBuildError as exc:
+                job.status = JobStatus.FAILED.value
+                job.error = str(exc)
+                job.error_category = "invalid_argument"
+                self._finish(job)
+                return
 
-        result = self.processes.run_job(
-            job,
-            command,
-            total_duration,
-            on_progress=lambda j, info: self.callbacks._call("on_job_progress", j, info),
-            on_log=lambda j, line: self.callbacks._call("on_job_log", j, line),
-            final_output=destination,
-        )
+            for index, command in enumerate(commands):
+                job.command = command
+                if passes > 1:
+                    self.callbacks._call(
+                        "on_job_log", job, f"Проход {index + 1} из {passes}."
+                    )
+                result = self.processes.run_job(
+                    job,
+                    command,
+                    total_duration,
+                    on_progress=lambda j, info, i=index: self._progress(j, info, i, passes),
+                    on_log=lambda j, line: self.callbacks._call("on_job_log", j, line),
+                    final_output=destination,
+                    finalize=index == len(commands) - 1,
+                )
+                if not result.ok:
+                    break
+
+            if retried or not self._drop_hardware(job, result):
+                break
+            retried = True
+            job.progress = 0.0
+            self.callbacks._call(
+                "on_job_log",
+                job,
+                "Аппаратное кодирование не завелось — повтор на процессоре.",
+            )
+
+        self._discard_passlog(passlog)
 
         if result.cancelled:
             job.status = JobStatus.CANCELLED.value
@@ -205,6 +237,53 @@ class QueueManager:
 
         job.log_path = str(result.log_path) if result.log_path else job.log_path
         self._finish(job)
+
+    @staticmethod
+    def _two_pass(job: Job) -> bool:
+        """Два прохода имеют смысл только там, где задан битрейт: при
+        постоянном качестве (CRF) кодировщику нечего распределять."""
+        return (
+            job.video.two_pass
+            and job.video.mode == "encode"
+            and job.video.quality_mode in ("bitrate", "size")
+        )
+
+    def _progress(self, job: Job, info, index: int, passes: int) -> None:
+        """Растягивает прогресс прохода на его долю от общего."""
+        if passes > 1:
+            info.fraction = (index + info.fraction) / passes
+        self.callbacks._call("on_job_progress", job, info)
+
+    @staticmethod
+    def _discard_passlog(passlog: str) -> None:
+        """FFmpeg оставляет рядом с выходом файлы статистики (-0.log,
+        -0.log.mbtree) — они нужны только между проходами."""
+        base = Path(passlog)
+        for leftover in base.parent.glob(base.name + "*"):
+            try:
+                leftover.unlink()
+            except OSError as exc:  # noqa: PERF203 - чужой файл не должен ронять задание
+                log.debug("Не удалось убрать %s: %s", leftover, exc)
+
+    def _drop_hardware(self, job: Job, result) -> bool:
+        """Снимает с задания аппаратный энкодер после отказа драйвера.
+
+        Пользователю нужен готовый файл, а не сообщение про NVENC: если
+        видеокарта не отозвалась, то же задание повторяется на процессоре.
+        Энкодер очищается в обоих полях, откуда его берёт CommandBuilder, —
+        дальше CompatibilityService сам выберет программный вариант.
+        Возвращает False, когда очищать нечего: команда не изменилась бы.
+        """
+        if result.ok or result.cancelled or result.error is None:
+            return False
+        if result.error.category.value != "hwaccel_error":
+            return False
+        if not (job.video_encoder or job.video.encoder or job.hwaccel):
+            return False
+        job.video_encoder = None
+        job.video.encoder = None
+        job.hwaccel = None
+        return True
 
     def _finish(self, job: Job) -> None:
         job.finished_at = datetime.now()

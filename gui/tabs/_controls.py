@@ -55,6 +55,15 @@ _VIDEO_CODEC_LABELS: dict[str, str] = {
     "theora": "Theora",
 }
 
+# Два способа задать качество, между которыми выбирает пользователь.
+# Остальные режимы модели (bitrate, qp, lossless) панель не показывает —
+# они остаются доступны через профили и экспертные параметры.
+_QUALITY_LABELS: dict[str, str] = {
+    "crf": "Постоянное качество (CRF)",
+    "size": "Целевой размер файла",
+}
+_QUALITY_BY_LABEL: dict[str, str] = {label: mode for mode, label in _QUALITY_LABELS.items()}
+
 _BASIC_AUDIO_CODECS: tuple[str, ...] = ("aac", "mp3", "opus", "ac3", "flac")
 
 _AUDIO_CODEC_LABELS: dict[str, str] = {
@@ -86,12 +95,21 @@ def _device_label(encoder) -> str:
     return "Процессор (CPU)"
 
 
-def build_video_codec_choices(caps, show_all: bool) -> dict[str, CodecChoice]:
+def build_video_codec_choices(
+    caps, show_all: bool, hw_suffixes: "tuple[str, ...] | None" = None
+) -> dict[str, CodecChoice]:
     """Строит подписанные варианты выбора видеокодека.
 
     Каждая строка явно называет устройство исполнения, например:
     «H.264 — Процессор (CPU) · libx264» или
     «H.265 / HEVC — Видеокарта: NVIDIA NVENC · hevc_nvenc».
+
+    ``hw_suffixes`` — суффиксы энкодеров, под которые в системе действительно
+    есть видеокарта (``("nvenc",)`` и т.п.). Аппаратные варианты вне этого
+    набора не показываются: в любой сборке FFmpeg для Windows скомпилированы
+    все энкодеры сразу, и без такой проверки на машине с одним лишь Intel
+    предлагался бы NVENC, падающий с «No capable devices found».
+    ``None`` — не фильтровать (видеокарты не определены).
     """
     choices: dict[str, CodecChoice] = {AUTO_LABEL: ("auto", None)}
     available = {c.name for c in caps.encoding_codecs("video")}
@@ -110,6 +128,10 @@ def build_video_codec_choices(caps, show_all: bool) -> dict[str, CodecChoice]:
         choices[f"{label} — Авто (по настройкам)"] = (codec_name, None)
         software = [e for e in encoders if not e.is_hardware]
         hardware = sorted((e for e in encoders if e.is_hardware), key=lambda e: e.hardware_vendor)
+        if hw_suffixes:
+            hardware = [
+                e for e in hardware if any(e.name.endswith(f"_{s}") for s in hw_suffixes)
+            ]
         for enc in software:
             choices[f"{label} — Процессор (CPU) · {enc.name}"] = (codec_name, enc.name)
         for enc in hardware:
@@ -192,9 +214,24 @@ class VideoPanel(Card):
         attach_help(self.codec_menu, app, "auto_hardware")
         row += 1
 
-        _caption(body, "Качество (CRF)", row)
+        _caption(body, "Качество", row)
+        self.quality_menu = ctk.CTkOptionMenu(
+            body,
+            values=list(_QUALITY_LABELS.values()),
+            command=lambda _v: self._on_user_quality_changed(),
+            width=320,
+            anchor="w",
+            font=font("small"),
+            dropdown_font=font("small"),
+        )
+        self.quality_menu.set(_QUALITY_LABELS["crf"])
+        self.quality_menu.grid(row=row, column=1, sticky="ew", pady=3)
+        row += 1
+
+        self._crf_caption = _caption(body, "Значение CRF", row)
         quality_frame = ctk.CTkFrame(body, fg_color="transparent")
         quality_frame.grid(row=row, column=1, sticky="ew", pady=3)
+        self._crf_frame = quality_frame
         quality_frame.grid_columnconfigure(0, weight=1)
         self.crf_slider = ctk.CTkSlider(
             quality_frame,
@@ -218,10 +255,40 @@ class VideoPanel(Card):
         attach_help(self.crf_value_label, app, "crf")
         row += 1
 
-        muted(body, "Меньше значение — выше качество и больше файл").grid(
-            row=row, column=1, sticky="w", pady=(0, 2)
-        )
+        self._crf_hint = muted(body, "Меньше значение — выше качество и больше файл")
+        self._crf_hint.grid(row=row, column=1, sticky="w", pady=(0, 2))
         row += 1
+
+        # Строка целевого размера занимает то же место, что и CRF: показана
+        # ровно одна из двух — какая, решает выбор выше.
+        self._size_caption = _caption(body, "Размер файла", row)
+        size_frame = ctk.CTkFrame(body, fg_color="transparent")
+        size_frame.grid(row=row, column=1, sticky="w", pady=3)
+        self._size_frame = size_frame
+        self.size_entry = ctk.CTkEntry(
+            size_frame, width=78, placeholder_text="100", font=font("small")
+        )
+        self.size_entry.grid(row=0, column=0)
+        self.size_entry.bind("<KeyRelease>", lambda _e: self._notify_changed(), add="+")
+        ctk.CTkLabel(size_frame, text="МиБ", font=font("small")).grid(
+            row=0, column=1, padx=(6, 14)
+        )
+        self.two_pass_check = ctk.CTkCheckBox(
+            size_frame,
+            text="два прохода",
+            command=self._notify_user_change,
+            font=font("small"),
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.two_pass_check.select()
+        self.two_pass_check.grid(row=0, column=2)
+        row += 1
+
+        self._size_hint = muted(body, "Битрейт подбирается под указанный размер")
+        self._size_hint.grid(row=row, column=1, sticky="w", pady=(0, 2))
+        row += 1
+        self._apply_quality_visibility()
 
         _caption(body, "Preset", row)
         self.preset_menu = ctk.CTkOptionMenu(
@@ -283,11 +350,34 @@ class VideoPanel(Card):
     def _on_mode_changed(self) -> None:
         enabled = self.mode() == "encode"
         state = "normal" if enabled else "disabled"
-        for widget in (self.codec_menu, self.crf_slider, self.preset_menu):
+        for widget in (
+            self.codec_menu,
+            self.quality_menu,
+            self.crf_slider,
+            self.preset_menu,
+            self.size_entry,
+            self.two_pass_check,
+        ):
             widget.configure(state=state)
 
     def _on_user_mode_changed(self) -> None:
         self._on_mode_changed()
+        self._notify_user_change()
+
+    # -- способ задания качества --------------------------------------------
+    def quality_mode(self) -> str:
+        """``crf`` или ``size`` — значением модели, а не подписью."""
+        return _QUALITY_BY_LABEL.get(self.quality_menu.get(), "crf")
+
+    def _apply_quality_visibility(self) -> None:
+        by_size = self.quality_mode() == "size"
+        for widget in (self._crf_caption, self._crf_frame, self._crf_hint):
+            widget.grid_remove() if by_size else widget.grid()
+        for widget in (self._size_caption, self._size_frame, self._size_hint):
+            widget.grid() if by_size else widget.grid_remove()
+
+    def _on_user_quality_changed(self) -> None:
+        self._apply_quality_visibility()
         self._notify_user_change()
 
     def _notify_user_change(self) -> None:
@@ -308,7 +398,12 @@ class VideoPanel(Card):
         # Полный список всегда держим под рукой (для восстановления выбора
         # из профилей/заданий, даже если он сейчас скрыт базовым режимом).
         self._choices = build_video_codec_choices(caps, show_all=True)
-        visible = build_video_codec_choices(caps, show_all=show_all)
+        # Расширенный список («показать все кодеки») заодно снимает отбор по
+        # видеокарте — осознанный выход для нераспознанного железа.
+        suffixes = None
+        if not show_all and hasattr(self.app, "available_hw_suffixes"):
+            suffixes = self.app.available_hw_suffixes() or None
+        visible = build_video_codec_choices(caps, show_all=show_all, hw_suffixes=suffixes)
         values = list(visible.keys())
 
         current = self.codec_menu.get()
@@ -369,6 +464,14 @@ class VideoPanel(Card):
             values = values + [label]
             self.codec_menu.configure(values=values)
         self.codec_menu.set(label)
+        # Режимы, которых нет в списке (bitrate, qp, lossless), показываем как
+        # CRF: панель ими не управляет, но и молча ломать их не должна.
+        self.quality_menu.set(_QUALITY_LABELS.get(video.quality_mode, _QUALITY_LABELS["crf"]))
+        self.size_entry.delete(0, "end")
+        if video.target_size_mb:
+            self.size_entry.insert(0, f"{video.target_size_mb:g}")
+        self.two_pass_check.select() if video.two_pass else self.two_pass_check.deselect()
+        self._apply_quality_visibility()
         self.crf_slider.set(video.crf if video.crf is not None else 23)
         self.crf_value_label.configure(text=str(int(video.crf if video.crf is not None else 23)))
         if video.preset:
@@ -410,12 +513,16 @@ class VideoPanel(Card):
                 return None
 
         codec, encoder = self._current_choice()
+        quality_mode = self.quality_mode()
+        by_size = quality_mode == "size"
         return VideoOptions(
             mode=self.mode(),
             codec=codec,
             encoder=encoder,
-            quality_mode="crf",
+            quality_mode=quality_mode,
             crf=self.crf_slider.get(),
+            target_size_mb=_float_or_none(self.size_entry) if by_size else None,
+            two_pass=bool(self.two_pass_check.get()) if by_size else False,
             preset=self.preset_menu.get(),
             width=_int_or_none(self.width_entry),
             height=_int_or_none(self.height_entry),
@@ -476,6 +583,23 @@ class AudioPanel(Card):
         attach_help(self.bitrate_menu, app, "bitrate")
         row += 1
 
+        _caption(body, "Громкость", row)
+        self.normalize_check = ctk.CTkCheckBox(
+            body,
+            text="Привести к норме (EBU R128)",
+            command=self._notify_user_change,
+            font=font("small"),
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.normalize_check.grid(row=row, column=1, sticky="w", pady=3)
+        row += 1
+
+        muted(body, "Одна громкость у разных записей").grid(
+            row=row, column=1, sticky="w", pady=(0, 2)
+        )
+        row += 1
+
         self._on_mode_changed()
 
     # -- режим дорожки ------------------------------------------------------
@@ -490,7 +614,7 @@ class AudioPanel(Card):
     def _on_mode_changed(self) -> None:
         enabled = self.mode() == "encode"
         state = "normal" if enabled else "disabled"
-        for widget in (self.codec_menu, self.bitrate_menu):
+        for widget in (self.codec_menu, self.bitrate_menu, self.normalize_check):
             widget.configure(state=state)
 
     def _on_user_mode_changed(self) -> None:
@@ -551,6 +675,7 @@ class AudioPanel(Card):
         self.codec_menu.set(label)
         if audio.bitrate:
             self.bitrate_menu.set(audio.bitrate)
+        self.normalize_check.select() if audio.normalize else self.normalize_check.deselect()
         self._on_mode_changed()
         self._notify_changed()
 
@@ -562,4 +687,5 @@ class AudioPanel(Card):
             codec=codec,
             encoder=encoder,
             bitrate=self.bitrate_menu.get() if mode == "encode" else None,
+            normalize=bool(self.normalize_check.get()) and mode == "encode",
         )

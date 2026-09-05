@@ -127,11 +127,14 @@ class ProcessManager:
         on_progress: ProgressCallback | None = None,
         on_log: LogCallback | None = None,
         final_output: Path | None = None,
+        finalize: bool = True,
     ) -> RunResult:
         """Выполняет одну команду, читая прогресс из stdout.
 
         `command` уже содержит путь к временному файлу (раздел 30);
         `final_output` — куда переименовать результат при успехе.
+        `finalize=False` — запуск, после которого файла не остаётся (первый
+        проход двухпроходного кодирования): проверять и переименовывать нечего.
         """
         started = time.monotonic()
         temp_output = Path(command[-1])
@@ -218,6 +221,16 @@ class ProcessManager:
                 returncode,
                 stderr=stderr_text,
                 error=error,
+                duration=elapsed,
+                log_path=self._log_path(log_file),
+            )
+
+        if not finalize:
+            self._write_log(log_file, "Проход завершён, статистика собрана.")
+            self._close_log(log_file)
+            return RunResult(
+                returncode,
+                stderr=stderr_text,
                 duration=elapsed,
                 log_path=self._log_path(log_file),
             )

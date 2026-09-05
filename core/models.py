@@ -90,6 +90,25 @@ def format_bitrate(bits_per_second: int | float | None) -> str:
     return f"{kbps:.0f} kbps"
 
 
+def parse_bitrate(value: str | int | float | None) -> float | None:
+    """'160k' -> 160000.0. Обратна :func:`format_bitrate` по смыслу, но
+    разбирает то, что пишут в настройках FFmpeg: 160k, 2M, 4500000."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().lower().rstrip("bps").strip()
+    multiplier = 1.0
+    if text.endswith("k"):
+        multiplier, text = 1_000.0, text[:-1]
+    elif text.endswith("m"):
+        multiplier, text = 1_000_000.0, text[:-1]
+    try:
+        return float(text) * multiplier
+    except ValueError:
+        return None
+
+
 def parse_fraction(value: str | None) -> float | None:
     """'30000/1001' -> 29.97. Возвращает None при 0/0 или мусоре."""
     if not value:
@@ -331,9 +350,15 @@ class VideoOptions:
     mode: str = "encode"  # encode | copy | none
     codec: str = "auto"  # логический кодек: h264, hevc, av1...
     encoder: str | None = None  # None => Авто (выбирает CompatibilityService)
-    quality_mode: str = "crf"  # crf | bitrate | qp | lossless
+    quality_mode: str = "crf"  # crf | bitrate | qp | lossless | size
     crf: float | None = 23.0
     bitrate: str | None = None
+    #: Размер выходного файла в мебибайтах (как показывает проводник) для
+    #: quality_mode == "size": битрейт считается из него и длительности.
+    target_size_mb: float | None = None
+    #: Два прохода: первый собирает статистику, второй кодирует. Имеет смысл
+    #: только при заданном битрейте — при постоянном качестве (CRF) не нужен.
+    two_pass: bool = False
     preset: str | None = "medium"
     tune: str | None = None
     width: int | None = None
@@ -362,6 +387,8 @@ class AudioOptions:
     channels: int | None = None
     channel_layout: str | None = None
     volume: float | None = None
+    #: Приведение громкости к вещательной норме EBU R128 (фильтр loudnorm).
+    normalize: bool = False
     extra_options: dict[str, str] = field(default_factory=dict)
 
 
@@ -475,6 +502,14 @@ class Job:
     @property
     def output_path(self) -> Path:
         return Path(self.output_file)
+
+    def effective_duration(self) -> float | None:
+        """Длительность результата: с учётом обрезки, а не всего исходника."""
+        if self.trim.enabled:
+            trimmed = self.trim.effective_duration()
+            if trimmed:
+                return trimmed
+        return self.source.duration if self.source else None
 
     @property
     def is_active(self) -> bool:

@@ -104,6 +104,19 @@ class EstimateService:
                 sample_seconds=source_duration,
             )
 
+        # Целевой размер задан пользователем — измерять нечего: битрейт как раз
+        # и подобран под него. Пробный фрагмент здесь ещё и обманул бы: битрейт
+        # пересчитался бы по длительности самого фрагмента и вышел огромным.
+        if job.video.mode == "encode" and job.video.quality_mode == "size":
+            bitrate = self.builder.target_bitrate(job)
+            if bitrate:
+                total_bps = bitrate + self.builder.audio_bps(job)
+                return SizeEstimate(
+                    True,
+                    estimated_bytes=int(total_bps * target_duration / 8),
+                    sample_seconds=target_duration,
+                )
+
         sample_seconds = min(SAMPLE_SECONDS, target_duration)
         start = window_start + max(0.0, (target_duration - sample_seconds) / 2)
 

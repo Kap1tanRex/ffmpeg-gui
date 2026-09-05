@@ -568,6 +568,10 @@ class MainWindow(_RootWindow):
             summary,
             known[0].vendor if known else "GPU",
         )
+        # Видеокарта определяется в отдельном потоке и обычно позже, чем
+        # строятся списки кодеков: без пересборки в них остались бы
+        # аппаратные варианты, которых это железо не потянет.
+        self._refresh_codec_lists()
 
     def _ffmpeg_missing(self) -> None:
         """Раздел 46."""
@@ -695,13 +699,14 @@ class MainWindow(_RootWindow):
         self.trim_tab.video_panel.apply_default_crf(self.app.settings.default_crf)
         # Раздел «Кодеки и контейнеры»: базовый/расширенный список
         # переключается мгновенно, без переоткрытия разделов.
-        self.compress_tab.video_panel.refresh_encoders()
-        self.compress_tab.audio_panel.refresh_encoders()
-        self.convert_tab.video_panel.refresh_encoders()
-        self.convert_tab.audio_panel.refresh_encoders()
+        self._refresh_codec_lists()
         self.convert_tab.refresh_container_choices()
-        self.trim_tab.video_panel.refresh_encoders()
-        self.trim_tab.audio_panel.refresh_encoders()
+
+    def _refresh_codec_lists(self) -> None:
+        """Пересобирает списки кодеков во всех разделах, работающих с файлами."""
+        for tab in (self.compress_tab, self.convert_tab, self.trim_tab):
+            tab.video_panel.refresh_encoders()
+            tab.audio_panel.refresh_encoders()
 
     # -- запуск заданий ------------------------------------------------------
     def start_current_tab(self) -> None:

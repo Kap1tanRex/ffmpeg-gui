@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from .capabilities import FFmpegCapabilities
 from .compatibility import CompatibilityService
-from .models import Job, MediaFile, SubtitleMode
+from .models import Job, MediaFile, SubtitleMode, parse_bitrate
 
 
 @dataclass
@@ -55,11 +56,15 @@ class CommandBuilder:
         output_override: str | Path | None = None,
         for_execution: bool = False,
         binary: str | None = None,
+        pass_number: int | None = None,
+        passlog: str | Path | None = None,
     ) -> list[str]:
         """Полная команда: [ffmpeg, -i, вход, ..., выход].
 
         `for_execution=True` добавляет служебные ключи прогресса (раздел 26).
         `output_override` используется для записи во временный файл (раздел 30).
+        `pass_number` — номер прохода при двухпроходном кодировании: первый
+        проход только собирает статистику в `passlog` и пишет в никуда.
         """
         if not job.input_files:
             raise CommandBuildError("Не задан входной файл")
@@ -73,6 +78,17 @@ class CommandBuilder:
         args += self._input_section(job)
         args += self._map_section(job)
         args += self._video_section(job)
+        if pass_number:
+            args += ["-pass", str(pass_number), "-passlogfile", str(passlog)]
+        if pass_number == 1:
+            # Первому проходу нужна только статистика видео: звук и субтитры
+            # он бы кодировал впустую, а результат уходит в никуда.
+            # Явное отображение потоков (раздел 39) при этом ломать нельзя —
+            # там мог быть выбран конкретный звук, и -an даст конфликт.
+            if not job.stream_map:
+                args += ["-an", "-sn"]
+            args += ["-f", "null", os.devnull]
+            return args
         args += self._audio_section(job)
         args += self._subtitle_section(job)
         args += self._trim_output_section(job)
@@ -128,6 +144,38 @@ class CommandBuilder:
             args += ["-map", mapping]
         return args
 
+    # -- целевой размер --------------------------------------------------
+    #: Запас на заголовки контейнера и промах кодировщика по битрейту.
+    SIZE_MARGIN = 0.97
+
+    def target_bitrate(self, job: Job) -> int | None:
+        """Битрейт видео (бит/с), при котором файл уложится в заданный размер.
+
+        Размер задаётся в мебибайтах — так же, как его показывает проводник,
+        иначе «100 МБ» в программе и в свойствах файла означали бы разное.
+        Звук вычитается: его биты видео забрать не может.
+        """
+        size_mb = job.video.target_size_mb
+        duration = job.effective_duration()
+        if not size_mb or not duration or duration <= 0:
+            return None
+        total_bps = size_mb * 1024 * 1024 * 8 / duration
+        video_bps = total_bps * self.SIZE_MARGIN - self.audio_bps(job)
+        # Ниже этого порога получается не видео, а мозаика; пусть лучше файл
+        # выйдет больше заказанного, чем непригодным.
+        return max(int(video_bps), 32_000)
+
+    @staticmethod
+    def audio_bps(job: Job) -> float:
+        audio = job.audio
+        if audio.mode == "none":
+            return 0.0
+        if audio.mode == "copy":
+            streams = job.source.audio_streams if job.source else []
+            known = [s.bit_rate for s in streams if s.bit_rate]
+            return float(sum(known)) if known else 128_000.0
+        return parse_bitrate(audio.bitrate) or 128_000.0
+
     # -- видео ----------------------------------------------------------
     def _video_section(self, job: Job) -> list[str]:
         video = job.video
@@ -151,6 +199,14 @@ class CommandBuilder:
             args += self._quality_args(encoder, video.crf)
         elif video.quality_mode == "bitrate" and video.bitrate:
             args += ["-b:v", video.bitrate]
+        elif video.quality_mode == "size":
+            bitrate = self.target_bitrate(job)
+            if bitrate is None:
+                raise CommandBuildError(
+                    "Для режима «Целевой размер» нужны размер и длительность "
+                    "исходника — дождитесь анализа файла"
+                )
+            args += ["-b:v", str(bitrate)]
         elif video.quality_mode == "lossless":
             args += self._quality_args(encoder, 0)
         elif video.quality_mode == "qp" and video.crf is not None:
@@ -319,6 +375,11 @@ class CommandBuilder:
         filters = list(job.audio_filters)
         if audio.volume is not None and abs(audio.volume - 1.0) > 1e-6:
             filters.append(f"volume={audio.volume:g}")
+        if audio.normalize:
+            # Вещательная норма EBU R128: -16 LUFS — то, к чему приводят звук
+            # видеоплощадки. Ставится последним, чтобы ручная громкость выше
+            # не сдвигала результат замера.
+            filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
         if filters:
             args += ["-af", ",".join(filters)]
         return args

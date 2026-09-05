@@ -276,21 +276,27 @@ class Application:
         self._detect_gpu()
         return self.gpu_info
 
-    def preferred_hw_suffixes(self) -> tuple[str, ...]:
-        """Раздел 35: суффиксы аппаратных энкодеров для обнаруженных GPU.
+    def available_hw_suffixes(self) -> tuple[str, ...]:
+        """Раздел 35: суффиксы энкодеров, под которые в системе есть видеокарта.
 
-        Пустой кортеж, если автовыбор аппаратного энкодера выключен в
-        настройках или видеокарта не определена — тогда используется
-        обычный (программный) энкодер.
+        Пустой кортеж означает «определить не удалось» (видеокарты не найдены
+        или производитель неизвестен), а не «аппаратного кодирования нет»:
+        по нему ничего не скрывается, иначе на нераспознанном железе пропали
+        бы рабочие варианты.
         """
-        if not self.settings.auto_hardware_encoding:
-            return ()
         suffixes: list[str] = []
         for gpu in self.gpu_info:
             for suffix in hardware_suffixes_for_vendor(gpu.vendor):
                 if suffix not in suffixes:
                     suffixes.append(suffix)
         return tuple(suffixes)
+
+    def preferred_hw_suffixes(self) -> tuple[str, ...]:
+        """То же, но с оглядкой на настройку автовыбора: пустой кортеж, когда
+        автовыбор выключен, — тогда берётся обычный (программный) энкодер."""
+        if not self.settings.auto_hardware_encoding:
+            return ()
+        return self.available_hw_suffixes()
 
     def apply_capabilities(self, capabilities: FFmpegCapabilities) -> None:
         self.capabilities = capabilities
