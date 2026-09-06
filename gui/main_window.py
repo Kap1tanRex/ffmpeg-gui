@@ -641,15 +641,14 @@ class MainWindow(_RootWindow):
             self.import_hint.configure(text="Drag & Drop недоступен (нет tkinterdnd2)")
 
     def _gpu_detected(self, gpus) -> None:
-        from ..services.gpu_detector import summarize
+        from ..services.gpu_detector import status_caption, summarize
 
-        summary = summarize(gpus)
         known = [gpu for gpu in gpus if gpu.vendor != "UNKNOWN"]
         self.status_strip.show(
             "gpu",
             "ok" if known else "idle",
-            summary,
-            known[0].vendor if known else "GPU",
+            summarize(gpus),
+            status_caption(gpus),
         )
         # Видеокарта определяется в отдельном потоке и обычно позже, чем
         # строятся списки кодеков: без пересборки в них остались бы
