@@ -129,7 +129,13 @@ def build_video_codec_choices(
         choices[f"{label} — Авто (по настройкам)"] = (codec_name, None)
         software = [e for e in encoders if not e.is_hardware]
         hardware = sorted((e for e in encoders if e.is_hardware), key=lambda e: e.hardware_vendor)
-        if hw_suffixes:
+        probe = getattr(caps, "hardware_probe", None)
+        if probe:
+            # Проба точнее отбора по производителю: она ловит и случай, когда
+            # видеокарта есть, а энкодер на ней не заводится — старый драйвер,
+            # сеанс без доступа к GPU, отключённая дискретная графика.
+            hardware = [e for e in hardware if not probe.get(e.name, "")]
+        elif hw_suffixes:
             hardware = [
                 e for e in hardware if any(e.name.endswith(f"_{s}") for s in hw_suffixes)
             ]

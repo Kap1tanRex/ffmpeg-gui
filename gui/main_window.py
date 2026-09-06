@@ -624,6 +624,7 @@ class MainWindow(_RootWindow):
         for tab in (self.compress_tab, self.convert_tab, self.trim_tab):
             tab.on_capabilities_ready()
         self.settings_tab.update_ffmpeg_status()
+        self.settings_tab.show_encoder_probe()
         self._set_status(
             f"FFmpeg готов   •   энкодеров: {len(capabilities.encoders)}   •   "
             f"контейнеров: {len(capabilities.muxers)}   •   "

@@ -16,7 +16,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2  # 2: добавлена проба аппаратных энкодеров
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +153,56 @@ STANDARD_PRESETS: tuple[str, ...] = (
 )
 
 
+#: Строки, ради которых проба и делается: по ним видно, почему энкодер не
+#: завёлся. Проверяются в этом порядке — от конкретной причины к общей.
+_PROBE_MARKERS: tuple[str, ...] = (
+    "minimum required nvidia driver",
+    "driver does not support",
+    "cannot load nvcuda",
+    "cannot load nvencodeapi",
+    "failed to open",
+    "no capable devices found",
+    "not supported",
+    "no device available",
+    "error creating a mfx session",
+    "failed loading",
+    "unknown encoder",
+)
+
+
+#: Строки отчёта, в которых слово «error» не означает ошибку.
+_PROBE_NOISE: tuple[str, ...] = ("decode errors", "error concealment", "packets read")
+
+
+def probe_reason(output: str) -> str:
+    """Короткая причина отказа из подробного вывода FFmpeg.
+
+    Вывод пробы — десятки строк; пользователю нужна одна, объясняющая отказ.
+    """
+    def clean(line: str) -> str:
+        # Отрезаем служебный префикс вида «[h264_nvenc @ 0x...] ».
+        return (line.split("] ", 1)[-1] if line.startswith("[") else line)[:160]
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for marker in _PROBE_MARKERS:
+        for line in lines:
+            if marker in line.lower():
+                return clean(line)
+    # Запасной разбор. «0 decode errors» — обычная строка отчёта, и слово
+    # «error» в ней ничего не значит: такие строки пропускаем.
+    for line in reversed(lines):
+        lowered = line.lower()
+        if any(word in lowered for word in _PROBE_NOISE):
+            continue
+        if any(word in lowered for word in ("error", "failed", "cannot", "could not", "unable")):
+            cleaned = clean(line)
+            # Для части энкодеров FFmpeg не сообщает ничего конкретнее этого.
+            if cleaned.lower().startswith("conversion failed"):
+                return "не поддерживается на этой машине"
+            return cleaned
+    return "энкодер не запустился"
+
+
 @dataclass
 class FFmpegCapabilities:
     """Полный снимок возможностей сборки."""
@@ -171,6 +221,10 @@ class FFmpegCapabilities:
     channel_layouts: list[str] = field(default_factory=list)
     hwaccels: list[str] = field(default_factory=list)
     bsfs: list[str] = field(default_factory=list)
+    #: Аппаратный энкодер -> "" если он действительно заработал на этой
+    #: машине, иначе краткая причина отказа. Пустой словарь означает «проба
+    #: не проводилась», а не «всё сломано».
+    hardware_probe: dict[str, str] = field(default_factory=dict)
 
     # ---- запросы --------------------------------------------------------
     def has_encoder(self, name: str) -> bool:
@@ -231,6 +285,7 @@ class FFmpegCapabilities:
             "channel_layouts": self.channel_layouts,
             "hwaccels": self.hwaccels,
             "bsfs": self.bsfs,
+            "hardware_probe": self.hardware_probe,
         }
 
     @classmethod
@@ -244,6 +299,7 @@ class FFmpegCapabilities:
             channel_layouts=list(data.get("channel_layouts", [])),
             hwaccels=list(data.get("hwaccels", [])),
             bsfs=list(data.get("bsfs", [])),
+            hardware_probe=dict(data.get("hardware_probe", {})),
         )
         caps.encoders = {k: EncoderInfo(**v) for k, v in data.get("encoders", {}).items()}
         caps.decoders = {k: DecoderInfo(**v) for k, v in data.get("decoders", {}).items()}
@@ -587,10 +643,38 @@ class CapabilityManager:
         caps.channel_layouts = parse_layouts(self.service.query("-layouts"))
         caps.hwaccels = parse_simple_list(self.service.query("-hwaccels"))
         caps.bsfs = parse_simple_list(self.service.query("-bsfs"))
+        caps.hardware_probe = self._probe_hardware(caps)
 
         self._capabilities = caps
         self._save_cache(caps)
         return caps
+
+    #: Кодеки, аппаратные энкодеры которых имеет смысл проверять. Пробовать
+    #: все подряд дорого, а выбирают на деле из этих.
+    PROBE_CODECS = ("h264", "hevc", "av1")
+
+    def _probe_hardware(self, caps: FFmpegCapabilities) -> dict[str, str]:
+        """Проверяет, какие аппаратные энкодеры действительно работают.
+
+        В сборках FFmpeg для Windows скомпилированы NVENC, Quick Sync и AMF
+        сразу, поэтому список ``-encoders`` ничего не говорит о том, что
+        заведётся на конкретной машине. Единственный надёжный ответ —
+        попробовать закодировать кадр.
+
+        Проба идёт один раз и кладётся в тот же кэш, что и остальные
+        возможности: при смене сборки FFmpeg она повторится.
+        """
+        wanted = [
+            name
+            for name, info in caps.encoders.items()
+            if info.is_hardware and any(name.startswith(f"{c}_") for c in self.PROBE_CODECS)
+        ]
+        result: dict[str, str] = {}
+        for encoder in sorted(wanted):
+            ok, output = self.service.try_encode(encoder)
+            result[encoder] = "" if ok else probe_reason(output)
+            log.info("Проба %s: %s", encoder, "работает" if ok else result[encoder])
+        return result
 
     def encoder_options(self, encoder: str) -> list[EncoderOption]:
         """Опции конкретного энкодера (раздел 21), с кэшем в памяти."""

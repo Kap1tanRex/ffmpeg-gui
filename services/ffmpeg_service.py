@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 import logging
 import shutil
 import subprocess
@@ -157,6 +158,43 @@ class FFmpegService:
     def encoder_help(self, encoder: str) -> str:
         """Раздел 21: `ffmpeg -h encoder=NAME`."""
         return self.query(f"-h encoder={encoder}")
+
+    def try_encode(self, encoder: str, timeout: float = 20.0) -> tuple[bool, str]:
+        """Пробует закодировать один кадр и возвращает (получилось, вывод).
+
+        Присутствие энкодера в ``-encoders`` не значит, что он заработает:
+        в сборках FFmpeg для Windows скомпилированы NVENC, QSV и AMF сразу,
+        а заведётся тот, под который есть видеокарта и живой драйвер.
+
+        Уровень ``verbose`` выбран намеренно. Настоящую причину отказа —
+        старый драйвер, 10 бит, слишком большой кадр — FFmpeg пишет именно
+        на нём, а на уровне ``error`` остаётся только «No capable devices
+        found», по которому ничего не понять.
+        """
+        if not self.binaries.ffmpeg:
+            return False, ""
+        command = [
+            str(self.binaries.ffmpeg),
+            "-hide_banner", "-nostdin", "-loglevel", "verbose",
+            "-f", "lavfi", "-i", "nullsrc=s=256x144:r=25",
+            "-frames:v", "1", "-c:v", encoder,
+            "-f", "null", os.devnull,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                creationflags=creation_flags(),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("Проба энкодера %s не удалась: %s", encoder, exc)
+            return False, str(exc)
+        output = (result.stderr or "") + (result.stdout or "")
+        return result.returncode == 0, output
 
     def probe_command(self) -> list[str]:
         return [str(self.binaries.ffprobe)] if self.binaries.ffprobe else []

@@ -60,6 +60,7 @@ class SettingsTab(ScrollFrame):
 
         self._load_from_settings()
         self._update_gpu_label()
+        self.show_encoder_probe()
 
         self.app.bus.subscribe(Event.GPU_DETECTED, lambda _gpus: self.after(0, self._update_gpu_label))
         bus = self.app.bus
@@ -325,6 +326,38 @@ class SettingsTab(ScrollFrame):
         )
         self.hw_decode_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
         attach_help(self.hw_decode_check, self.app, "hwaccel")
+
+        # Итог настоящей пробы: какие аппаратные энкодеры завелись, а какие
+        # нет и почему. Без этого «в списке нет NVENC» выглядит как поломка.
+        self.encoder_probe_label = muted(body, "", wraplength=700, justify="left")
+        self.encoder_probe_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
+
+    def show_encoder_probe(self) -> None:
+        probe = getattr(self.app.capabilities, "hardware_probe", {})
+        if not probe:
+            self.encoder_probe_label.configure(
+                text="Аппаратные энкодеры ещё не проверены.", text_color=pair("fg.secondary")
+            )
+            return
+        working = sorted(name for name, reason in probe.items() if not reason)
+        broken = {name: reason for name, reason in probe.items() if reason}
+
+        lines = []
+        if working:
+            lines.append("Проверено запуском — работают: " + ", ".join(working))
+        else:
+            lines.append("Проверено запуском: ни один аппаратный энкодер не завёлся")
+        # Разные энкодеры отказывают по одной причине; показываем причины,
+        # а не длинный список имён.
+        by_reason: dict[str, list[str]] = {}
+        for name, reason in sorted(broken.items()):
+            by_reason.setdefault(reason, []).append(name)
+        for reason, names in by_reason.items():
+            lines.append(f"{', '.join(names)} — {reason}")
+        self.encoder_probe_label.configure(
+            text="\n".join(lines),
+            text_color=severity_color("ok" if working else "warn"),
+        )
 
     def _on_hw_decode_changed(self) -> None:
         self.app.update_settings(hardware_decoding=bool(self.hw_decode_check.get()))
