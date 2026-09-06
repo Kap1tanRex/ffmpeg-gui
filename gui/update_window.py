@@ -19,6 +19,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
+from ..core.i18n import t, tf
 from ..core.models import format_size
 from ..core.release_notes import NoteSection, parse_release_notes
 from ..services.update_service import ReleaseInfo, UpdateError, UpdateService
@@ -144,12 +145,12 @@ class UpdateWindow(ctk.CTkToplevel):
         self.progress_label.grid(row=0, column=0, sticky="ew", pady=(0, 6))
 
         self.download_button = button(
-            actions, "↓   Скачать", self._download, variant="primary", height=40
+            actions, t("↓   Скачать"), self._download, variant="primary", height=40
         )
         self.download_button.grid(row=1, column=0, sticky="ew")
 
         self.history_button = button(
-            actions, "☰   Просмотр истории изменений", on_history or self._open_page, height=36
+            actions, t("☰   Просмотр истории изменений"), on_history or self._open_page, height=36
         )
         self.history_button.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
@@ -173,7 +174,7 @@ class UpdateWindow(ctk.CTkToplevel):
         target = self._downloadable()
         if target is None:
             self.download_button.configure(
-                text="↓   Открыть страницу выпуска" if self._page_url() else "↓   Скачать",
+                text=t("↓   Открыть страницу выпуска") if self._page_url() else "↓   Скачать",
                 state="normal" if self._page_url() else "disabled",
             )
 
@@ -196,7 +197,7 @@ class UpdateWindow(ctk.CTkToplevel):
 
         path = filedialog.asksaveasfilename(
             parent=self,
-            title="Сохранить обновление",
+            title=t("Сохранить обновление"),
             initialfile=target.asset.name,
             defaultextension=Path(target.asset.name).suffix,
         )
@@ -206,9 +207,9 @@ class UpdateWindow(ctk.CTkToplevel):
         asset = target.asset
         destination = Path(path)
         self._downloading = True
-        self.download_button.configure(text="Отменить загрузку")
+        self.download_button.configure(text=t("Отменить загрузку"))
         self.history_button.configure(state="disabled")
-        self.progress_label.configure(text=f"Загрузка {asset.name}…")
+        self.progress_label.configure(text=tf("Загрузка {name}…", name=asset.name))
 
         def report(received: int, total: int) -> None:
             self._safe(self._show_progress, received, total)
@@ -225,16 +226,16 @@ class UpdateWindow(ctk.CTkToplevel):
 
     def _show_progress(self, received: int, total: int) -> None:
         share = f" из {format_size(total)}" if total else ""
-        self.progress_label.configure(text=f"Загружено {format_size(received)}{share}")
+        self.progress_label.configure(text=tf("Загружено {format_size}{share}", format_size=format_size(received), share=share))
 
     def _finish(self, path: Path | None, error: str) -> None:
         self._downloading = False
-        self.download_button.configure(text="↓   Скачать")
+        self.download_button.configure(text=t("↓   Скачать"))
         self.history_button.configure(state="normal")
         if path is None:
-            self.progress_label.configure(text=f"Не удалось скачать: {error}")
+            self.progress_label.configure(text=tf("Не удалось скачать: {error}", error=error))
             return
-        self.progress_label.configure(text=f"Сохранено: {path}")
+        self.progress_label.configure(text=tf("Сохранено: {path}", path=path))
 
     def _open_page(self) -> None:
         url = self._page_url()

@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image
 
+from ...core.i18n import t, tf
 from ...core.models import AudioOptions, MediaFile, Operation, TrimOptions, VideoOptions, format_timecode, parse_timecode
 from ..theming import font, pair
 from ..widgets.scroll import ScrollFrame
@@ -67,12 +68,12 @@ class TrimTab(ScrollFrame):
         """Карточка диапазона: файл, границы и способ обрезки — вместе,
         потому что решение по ним принимается одновременно."""
         self.range_card = Card(
-            self, title="Диапазон", subtitle="Границы фрагмента и способ обрезки"
+            self, title=t("Диапазон"), subtitle=t("Границы фрагмента и способ обрезки")
         )
         self.range_card.grid(row=0, column=0, sticky="ew", pady=(0, GAP))
         self.range_card.body.grid_columnconfigure(4, weight=1)
 
-        self.file_label = muted(self.range_card.body, "Файл не выбран")
+        self.file_label = muted(self.range_card.body, t("Файл не выбран"))
         self.file_label.grid(row=0, column=0, columnspan=5, sticky="ew", pady=(0, 8))
 
     def _build_range_row(self) -> None:
@@ -83,7 +84,7 @@ class TrimTab(ScrollFrame):
         fields = ctk.CTkFrame(body, fg_color="transparent")
         fields.grid(row=1, column=0, columnspan=5, sticky="w")
 
-        ctk.CTkLabel(fields, text="Начало", anchor="w").grid(row=0, column=0, padx=(0, 10))
+        ctk.CTkLabel(fields, text=t("Начало"), anchor="w").grid(row=0, column=0, padx=(0, 10))
         self.start_entry = ctk.CTkEntry(
             fields, width=120, placeholder_text="00:00:00", font=font("small")
         )
@@ -91,21 +92,21 @@ class TrimTab(ScrollFrame):
         attach_timecode_mask(self.start_entry)
         self.start_entry.bind("<KeyRelease>", lambda _e: self.estimator.schedule(), add="+")
 
-        ctk.CTkLabel(fields, text="Конец", anchor="w").grid(row=0, column=2, padx=(0, 10))
+        ctk.CTkLabel(fields, text=t("Конец"), anchor="w").grid(row=0, column=2, padx=(0, 10))
         self.end_entry = ctk.CTkEntry(
-            fields, width=120, placeholder_text="авто", font=font("small")
+            fields, width=120, placeholder_text=t("авто"), font=font("small")
         )
         self.end_entry.grid(row=0, column=3)
         attach_timecode_mask(self.end_entry)
         self.end_entry.bind("<KeyRelease>", lambda _e: self.estimator.schedule(), add="+")
 
-        muted(body, "Вводите только цифры — формат ЧЧ:ММ:СС подставляется автоматически.").grid(
+        muted(body, t("Вводите только цифры — формат ЧЧ:ММ:СС подставляется автоматически.")).grid(
             row=2, column=0, columnspan=5, sticky="w", pady=(6, 0)
         )
 
         self.accurate_check = ctk.CTkCheckBox(
             body,
-            text="Точная обрезка (перекодирование)",
+            text=t("Точная обрезка (перекодирование)"),
             command=self._on_accurate_changed,
             checkbox_width=18,
             checkbox_height=18,
@@ -113,7 +114,7 @@ class TrimTab(ScrollFrame):
         self.accurate_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
         attach_help(self.accurate_check, self.app, "trim_accurate")
 
-        button(body, "Предпросмотр кадра", self._preview).grid(
+        button(body, t("Предпросмотр кадра"), self._preview).grid(
             row=3, column=4, sticky="e", pady=(12, 0)
         )
 
@@ -125,18 +126,18 @@ class TrimTab(ScrollFrame):
         длительности файла. Клик по кадру подставляет его время в поле
         «Начало» или «Конец» — так границы обрезки видно глазами, а не
         только вслепую по таймкоду."""
-        card = Card(self, title="Кадры файла")
+        card = Card(self, title=t("Кадры файла"))
         card.grid(row=2, column=0, sticky="ew", pady=(0, GAP))
         body = card.body
         body.grid_columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(body, fg_color="transparent")
         header.grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(header, text="Клик по кадру задаёт:", font=font("small")).pack(side="left")
+        ctk.CTkLabel(header, text=t("Клик по кадру задаёт:"), font=font("small")).pack(side="left")
         self.thumb_target_menu = ctk.CTkSegmentedButton(
-            header, values=["Начало", "Конец"], font=font("small")
+            header, values=[t("Начало"), t("Конец")], font=font("small")
         )
-        self.thumb_target_menu.set("Начало")
+        self.thumb_target_menu.set(t("Начало"))
         self.thumb_target_menu.pack(side="left", padx=(10, 0))
 
         self.thumbnails_frame = ScrollFrame(
@@ -167,7 +168,7 @@ class TrimTab(ScrollFrame):
         if media is None or not media.has_video or not media.duration:
             self.thumbnails_status.configure(text="")
             return
-        self.thumbnails_status.configure(text="Генерация превью…")
+        self.thumbnails_status.configure(text=t("Генерация превью…"))
 
         def run() -> None:
             pairs = self.app.preview.extract_thumbnail_strip(
@@ -219,8 +220,10 @@ class TrimTab(ScrollFrame):
         видео и аудио всё равно перекодируются."""
         self.panels_hint = muted(
             self,
-            "Кодек ниже применяется только при «Точной обрезке». "
-            "При быстрой обрезке потоки копируются без перекодирования.",
+            t(
+                "Кодек ниже применяется только при «Точной обрезке». "
+                "При быстрой обрезке потоки копируются без перекодирования."
+            ),
         )
         self.panels_hint.grid(row=3, column=0, sticky="ew", pady=(0, 6))
 
@@ -247,16 +250,16 @@ class TrimTab(ScrollFrame):
         self.estimator.schedule()
 
     def _build_output_row(self) -> None:
-        card = Card(self, title="Результат")
+        card = Card(self, title=t("Результат"))
         card.grid(row=5, column=0, sticky="ew", pady=(0, GAP))
         body = card.label_grid()
 
-        ctk.CTkLabel(body, text="Сохранить в", anchor="w", width=110).grid(
+        ctk.CTkLabel(body, text=t("Сохранить в"), anchor="w", width=110).grid(
             row=0, column=0, sticky="w"
         )
         self.output_entry = ctk.CTkEntry(body, font=font("small"))
         self.output_entry.grid(row=0, column=1, sticky="ew", padx=8)
-        button(body, "Обзор", self._browse_output, width=90).grid(row=0, column=2)
+        button(body, t("Обзор"), self._browse_output, width=90).grid(row=0, column=2)
 
     def _build_actions(self) -> None:
         # Кнопка запуска вынесена в закреплённую панель действий главного
@@ -264,7 +267,7 @@ class TrimTab(ScrollFrame):
         # только предпросмотр команды.
         frame = ctk.CTkFrame(self, fg_color="transparent")
         frame.grid(row=6, column=0, sticky="ew", pady=(0, GAP))
-        button(frame, "Показать команду FFmpeg", self._show_command, variant="ghost").grid(
+        button(frame, t("Показать команду FFmpeg"), self._show_command, variant="ghost").grid(
             row=0, column=0
         )
 
@@ -288,12 +291,12 @@ class TrimTab(ScrollFrame):
         self.end_entry.delete(0, "end")
         self.preview_label.configure(text="")
         if media is None:
-            self.file_label.configure(text="Файл не выбран")
+            self.file_label.configure(text=t("Файл не выбран"))
             self.output_entry.delete(0, "end")
             self.estimator.clear("выберите файл")
             self._refresh_thumbnails()
             return
-        self.file_label.configure(text=f"{media.name}   •   длительность {format_timecode(media.duration)}")
+        self.file_label.configure(text=tf("{name}   •   длительность {duration}", name=media.name, duration=format_timecode(media.duration)))
         if not self.output_entry.get().strip():
             suggestion = self.app.suggest_output_path(
                 media, media.path.suffix.lstrip("."), "_trimmed", video=self.video_panel.get_options()
@@ -303,7 +306,7 @@ class TrimTab(ScrollFrame):
         self._refresh_thumbnails()
 
     def _browse_output(self) -> None:
-        path = filedialog.asksaveasfilename(title="Сохранить как")
+        path = filedialog.asksaveasfilename(title=t("Сохранить как"))
         if path:
             self.output_entry.delete(0, "end")
             self.output_entry.insert(0, path)
@@ -319,9 +322,9 @@ class TrimTab(ScrollFrame):
             return
         frame_path = self.app.preview.extract_frame(self.media.path, start)
         if frame_path is None:
-            self.preview_label.configure(text="Не удалось извлечь кадр.")
+            self.preview_label.configure(text=t("Не удалось извлечь кадр."))
             return
-        self.preview_label.configure(text=f"Кадр сохранён: {frame_path}")
+        self.preview_label.configure(text=tf("Кадр сохранён: {frame_path}", frame_path=frame_path))
         self._open_file(frame_path)
 
     @staticmethod

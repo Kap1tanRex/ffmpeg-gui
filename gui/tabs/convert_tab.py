@@ -19,6 +19,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ...core.models import (
     AudioOptions,
     Job,
@@ -37,7 +38,24 @@ from ._filters_panel import FilterPanel
 from ._dialogs import show_command
 from ._estimate import OutputEstimator
 
-_MANUAL_PRESET = "Ручные настройки"
+_MANUAL_PRESET_SOURCE = "Ручные настройки"
+
+
+def manual_preset() -> str:
+    return t("Ручные настройки")
+
+
+def preset_label(name: str) -> str:
+    """Подпись встроенной предустановки на языке интерфейса."""
+    return t(name)
+
+
+def preset_source(label: str) -> str:
+    """Обратно: подпись -> исходное имя, по которому предустановка ищется."""
+    for name, *_rest in _CONVERT_PRESETS:
+        if t(name) == label:
+            return name
+    return label
 
 # Раздел «Предустановки»: одним кликом настраивает режим и качество видео и
 # аудио. Первая (используется по умолчанию) — чистый ремукс без
@@ -119,11 +137,16 @@ _POPULAR_AUDIO_CONTAINERS: dict[str, str] = {
 }
 _DEFAULT_CONTAINERS = list(_POPULAR_VIDEO_CONTAINERS.values())
 
-_SUBTITLE_LABELS = {
+_SUBTITLE_SOURCE = {
     "Сохранить как есть": SubtitleMode.COPY,
     "Удалить субтитры": SubtitleMode.REMOVE,
     "Перекодировать в формат контейнера": SubtitleMode.CONVERT,
 }
+
+
+def subtitle_labels() -> dict:
+    """Подписи режимов субтитров на языке интерфейса."""
+    return {t(label): mode for label, mode in _SUBTITLE_SOURCE.items()}
 
 
 class ConvertTab(ScrollFrame):
@@ -171,15 +194,15 @@ class ConvertTab(ScrollFrame):
     def _build_preset_row(self) -> None:
         """Предустановка и контейнер — одна карточка: это первое решение
         раздела, от которого зависит всё остальное."""
-        card = Card(self, title="Предустановка", subtitle="С чего начать — параметры ниже можно поменять вручную")
+        card = Card(self, title=t("Предустановка"), subtitle=t("С чего начать — параметры ниже можно поменять вручную"))
         card.grid(row=0, column=0, sticky="ew", pady=(0, GAP))
         body = card.label_grid()
         self._preset_card = card
 
-        ctk.CTkLabel(body, text="Набор", anchor="w", width=110).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(body, text=t("Набор"), anchor="w", width=110).grid(row=0, column=0, sticky="w")
         self.preset_menu = ctk.CTkOptionMenu(
             body,
-            values=[name for name, *_ in _CONVERT_PRESETS] + [_MANUAL_PRESET],
+            values=[preset_label(name) for name, *_ in _CONVERT_PRESETS] + [manual_preset()],
             command=self._apply_preset,
             width=320,
             anchor="w",
@@ -187,9 +210,9 @@ class ConvertTab(ScrollFrame):
             dropdown_font=font("small"),
         )
         self.preset_menu.grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        button(body, "Сохранить как…", self._save_preset, width=150).grid(row=0, column=2)
+        button(body, t("Сохранить как…"), self._save_preset, width=150).grid(row=0, column=2)
         self.delete_preset_button = button(
-            body, "Удалить", self._delete_preset, variant="danger", width=100
+            body, t("Удалить"), self._delete_preset, variant="danger", width=100
         )
         self.delete_preset_button.grid(row=0, column=3, padx=(8, 0))
 
@@ -201,7 +224,7 @@ class ConvertTab(ScrollFrame):
         часть одного решения «во что конвертируем»."""
         body = self._preset_card.body
 
-        ctk.CTkLabel(body, text="Контейнер", anchor="w", width=110).grid(
+        ctk.CTkLabel(body, text=t("Контейнер"), anchor="w", width=110).grid(
             row=2, column=0, sticky="w", pady=(10, 0)
         )
         self.container_menu = ctk.CTkOptionMenu(
@@ -239,16 +262,16 @@ class ConvertTab(ScrollFrame):
         self.filter_panel.on_user_change = self._on_panel_changed
 
     def _build_subtitle_row(self) -> None:
-        card = Card(self, title="Субтитры")
+        card = Card(self, title=t("Субтитры"))
         card.grid(row=3, column=0, sticky="ew", pady=(0, GAP))
         body = card.label_grid()
 
-        ctk.CTkLabel(body, text="Дорожки субтитров", anchor="w", width=160).grid(
+        ctk.CTkLabel(body, text=t("Дорожки субтитров"), anchor="w", width=160).grid(
             row=0, column=0, sticky="w"
         )
         self.subtitle_menu = ctk.CTkOptionMenu(
             body,
-            values=list(_SUBTITLE_LABELS),
+            values=list(subtitle_labels()),
             command=lambda _v: self.estimator.schedule(),
             width=240,
             anchor="w",
@@ -258,19 +281,19 @@ class ConvertTab(ScrollFrame):
         self.subtitle_menu.grid(row=0, column=1, sticky="w")
 
     def _build_output_row(self) -> None:
-        card = Card(self, title="Результат")
+        card = Card(self, title=t("Результат"))
         card.grid(row=4, column=0, sticky="ew", pady=(0, GAP))
         body = card.label_grid()
 
-        self.file_label = muted(body, "Файл не выбран")
+        self.file_label = muted(body, t("Файл не выбран"))
         self.file_label.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
 
-        ctk.CTkLabel(body, text="Сохранить в", anchor="w", width=110).grid(
+        ctk.CTkLabel(body, text=t("Сохранить в"), anchor="w", width=110).grid(
             row=1, column=0, sticky="w"
         )
         self.output_entry = ctk.CTkEntry(body, font=font("small"))
         self.output_entry.grid(row=1, column=1, sticky="ew", padx=8)
-        button(body, "Обзор", self._browse_output, width=90).grid(row=1, column=2)
+        button(body, t("Обзор"), self._browse_output, width=90).grid(row=1, column=2)
 
     def _build_actions(self) -> None:
         # Кнопка запуска и ожидаемый размер вынесены в закреплённую панель
@@ -279,14 +302,18 @@ class ConvertTab(ScrollFrame):
         frame.grid(row=5, column=0, sticky="ew", pady=(0, GAP))
         frame.grid_columnconfigure(1, weight=1)
 
-        button(frame, "Показать команду FFmpeg", self._show_command, variant="ghost").grid(
+        button(frame, t("Показать команду FFmpeg"), self._show_command, variant="ghost").grid(
             row=0, column=0
         )
 
     # -- предустановки -------------------------------------------------------
     def _refresh_preset_values(self) -> None:
         custom_names = [p.name for p in self.app.profiles.list() if not p.builtin]
-        values = [name for name, *_ in _CONVERT_PRESETS] + custom_names + [_MANUAL_PRESET]
+        values = (
+            [preset_label(name) for name, *_ in _CONVERT_PRESETS]
+            + custom_names
+            + [manual_preset()]
+        )
         current = self.preset_menu.get()
         self.preset_menu.configure(values=values)
         if current in values:
@@ -294,9 +321,12 @@ class ConvertTab(ScrollFrame):
         self._update_delete_button()
 
     def _apply_preset(self, name: str) -> None:
-        if name == _MANUAL_PRESET:
+        # В меню стоит переведённая подпись, а искать надо по исходному имени.
+        display = name
+        name = preset_source(name)
+        if display == manual_preset():
             self._preset_container = None
-            self.preset_menu.set(_MANUAL_PRESET)
+            self.preset_menu.set(manual_preset())
             self.preset_hint_label.configure(text="")
             self._update_delete_button()
             return
@@ -304,7 +334,7 @@ class ConvertTab(ScrollFrame):
         builtin = next((p for p in _CONVERT_PRESETS if p[0] == name), None)
         if builtin is not None:
             _, video, audio, container = builtin
-            hint = _PRESET_HINTS.get(name, "")
+            hint = t(_PRESET_HINTS.get(name, ""))
         else:
             profile = self.app.profiles.get(name)
             if profile is None:
@@ -322,7 +352,7 @@ class ConvertTab(ScrollFrame):
                 self._sync_output_extension()
         finally:
             self._applying_preset = False
-        self.preset_menu.set(name)
+        self.preset_menu.set(preset_label(name))
         self.preset_hint_label.configure(text=hint)
         self._update_copy_hint()
         self._update_delete_button()
@@ -337,8 +367,8 @@ class ConvertTab(ScrollFrame):
 
     def _mark_manual(self) -> None:
         self._preset_container = None
-        if self.preset_menu.get() != _MANUAL_PRESET:
-            self.preset_menu.set(_MANUAL_PRESET)
+        if self.preset_menu.get() != manual_preset():
+            self.preset_menu.set(manual_preset())
             self.preset_hint_label.configure(text="")
         self._update_delete_button()
 
@@ -348,7 +378,7 @@ class ConvertTab(ScrollFrame):
         self.delete_preset_button.configure(state="normal" if enabled else "disabled")
 
     def _save_preset(self) -> None:
-        dialog = ctk.CTkInputDialog(text="Название предустановки:", title="Сохранить предустановку")
+        dialog = ctk.CTkInputDialog(text=t("Название предустановки:"), title=t("Сохранить предустановку"))
         name = (dialog.get_input() or "").strip()
         if not name:
             return
@@ -362,7 +392,7 @@ class ConvertTab(ScrollFrame):
         self._refresh_preset_values()
         self._preset_container = profile.container
         self.preset_menu.set(name)
-        self.preset_hint_label.configure(text="Пользовательская предустановка.")
+        self.preset_hint_label.configure(text=t("Пользовательская предустановка."))
         self._update_delete_button()
 
     def _delete_preset(self) -> None:
@@ -463,7 +493,7 @@ class ConvertTab(ScrollFrame):
         decision = self.app.suggest_stream_copy(self.media, self._current_container())
         if decision.full_remux:
             self.copy_hint_label.configure(
-                text="Возможен ремукс без перекодирования (Stream Copy)."
+                text=t("Возможен ремукс без перекодирования (Stream Copy).")
             )
         else:
             self.copy_hint_label.configure(text="")
@@ -472,7 +502,7 @@ class ConvertTab(ScrollFrame):
     def set_file(self, media: MediaFile | None) -> None:
         self.media = media
         if media is None:
-            self.file_label.configure(text="Файл не выбран")
+            self.file_label.configure(text=t("Файл не выбран"))
             self.output_entry.delete(0, "end")
             self.copy_hint_label.configure(text="")
             self.refresh_container_choices()
@@ -497,7 +527,7 @@ class ConvertTab(ScrollFrame):
         self.estimator.schedule()
 
     def _browse_output(self) -> None:
-        path = filedialog.asksaveasfilename(title="Сохранить как")
+        path = filedialog.asksaveasfilename(title=t("Сохранить как"))
         if path:
             self.output_entry.delete(0, "end")
             self.output_entry.insert(0, path)
@@ -511,7 +541,7 @@ class ConvertTab(ScrollFrame):
             return None
         video = self.video_panel.get_options()
         audio = self.audio_panel.get_options()
-        subtitles = SubtitleOptions(mode=_SUBTITLE_LABELS.get(self.subtitle_menu.get(), SubtitleMode.COPY))
+        subtitles = SubtitleOptions(mode=subtitle_labels().get(self.subtitle_menu.get(), SubtitleMode.COPY))
         output = self.output_entry.get().strip() or None if media is self.media else None
         job = self.app.build_job(
             media,

@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from ..core.i18n import t, tf
 from ..app.application import Application
 from ..app.events import Event
 from ..app.state import APP_VERSION
@@ -54,7 +55,12 @@ SECTION_ICONS = {
 }
 
 #: Подзаголовок раздела: одна строка о том, что здесь делают.
-SECTION_HINTS = {
+def section_hints() -> dict[str, str]:
+    """Строка о назначении раздела — под его заголовком."""
+    return {k: t(v) for k, v in _SECTION_HINTS.items()}
+
+
+_SECTION_HINTS = {
     "compress": "Уменьшить размер файла, сохранив приемлемое качество",
     "convert": "Сменить контейнер и кодеки — при возможности без перекодирования",
     "trim": "Вырезать фрагмент по таймкоду: быстро копированием или точно",
@@ -67,12 +73,14 @@ SECTION_HINTS = {
 FILE_SECTIONS = ("compress", "convert", "trim", "info")
 
 #: Индикаторы строки состояния (идентификатор, подпись).
-STATUS_CHIPS = (
-    ("job", "Задание"),
-    ("queue", "Очередь"),
-    ("gpu", "GPU"),
-    ("ffmpeg", "FFmpeg"),
-)
+def status_chips() -> tuple[tuple[str, str], ...]:
+    """Индикаторы строки состояния: (идентификатор, подпись)."""
+    return (
+        ("job", t("Задание")),
+        ("queue", t("Очередь")),
+        ("gpu", "GPU"),
+        ("ffmpeg", "FFmpeg"),
+    )
 
 try:  # интеграция tkinterdnd2 с корневым окном CustomTkinter
     from tkinterdnd2 import TkinterDnD  # type: ignore
@@ -106,12 +114,11 @@ class MainWindow(_RootWindow):
 
         super().__init__()
         self.app = app
-        self.tr = app.translator
         self._active_job: Job | None = None
         self._section_by_title: dict[str, str] = {}
         self._ffmpeg_dialog_open = False
 
-        self.title(f"{self.tr('app.title', 'FFmpeg GUI')} {APP_VERSION}")
+        self.title(f"{t('FFmpeg GUI')} {APP_VERSION}")
         self.geometry("1340x920")
         self.minsize(*WINDOW_MIN_SIZE)
 
@@ -144,9 +151,9 @@ class MainWindow(_RootWindow):
     def _build_navigation(self) -> None:
         self.nav = NavigationView(
             self,
-            title=self.tr("app.title", "FFmpeg GUI"),
-            subtitle=self.tr("app.subtitle", "Кодирование, конвертация и обрезка"),
-            footer=f"Версия {APP_VERSION}",
+            title=t("FFmpeg GUI"),
+            subtitle=t("Кодирование, конвертация и обрезка"),
+            footer=tf("Версия {app_version}", app_version=APP_VERSION),
         )
         self.nav.grid(row=0, column=0, sticky="nsew")
         # Логика окна обращается к навигации так же, как раньше к CTkTabview.
@@ -156,7 +163,7 @@ class MainWindow(_RootWindow):
         self.nav.add_footer_widget(
             button(
                 self.nav.footer_frame,
-                f"{self.tr('app.help', 'Справка')}  ·  F1",
+                t("Справка") + "  ·  F1",
                 self.show_help,
                 variant="ghost",
                 anchor="w",
@@ -165,7 +172,7 @@ class MainWindow(_RootWindow):
         self.nav.add_footer_widget(
             button(
                 self.nav.footer_frame,
-                "Лог FFmpeg  ·  Ctrl+L",
+                t("Лог FFmpeg  ·  Ctrl+L"),
                 self.show_logs,
                 variant="ghost",
                 anchor="w",
@@ -203,7 +210,7 @@ class MainWindow(_RootWindow):
         self.section_hint.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
     def _build_files_card(self) -> None:
-        self.files_card = Card(self.content, title=self.tr("import.files", "Файлы"))
+        self.files_card = Card(self.content, title=t("Файлы"))
         self.files_card.grid(row=1, column=0, sticky="ew", padx=PAGE_PAD, pady=(4, GAP))
         body = self.files_card.body
         body.grid_columnconfigure(0, weight=1)
@@ -213,12 +220,12 @@ class MainWindow(_RootWindow):
         toolbar.grid_columnconfigure(3, weight=1)
 
         button(
-            toolbar, self.tr("import.add_file", "Добавить файл"), self.add_files, variant="primary"
+            toolbar, t("Добавить файл"), self.add_files, variant="primary"
         ).grid(row=0, column=0, padx=(0, 8))
-        button(toolbar, self.tr("import.add_folder", "Добавить папку"), self.add_folder).grid(
+        button(toolbar, t("Добавить папку"), self.add_folder).grid(
             row=0, column=1, padx=(0, 8)
         )
-        button(toolbar, self.tr("import.clear", "Очистить"), self.clear_files).grid(
+        button(toolbar, t("Очистить"), self.clear_files).grid(
             row=0, column=2, padx=(0, 8)
         )
 
@@ -228,7 +235,7 @@ class MainWindow(_RootWindow):
         self._select_all_var = ctk.BooleanVar(value=False)
         self.select_all_check = ctk.CTkCheckBox(
             toolbar,
-            text=self.tr("import.select_all", "Отметить все"),
+            text=t("Отметить все"),
             variable=self._select_all_var,
             command=self._on_select_all,
             checkbox_width=18,
@@ -241,8 +248,8 @@ class MainWindow(_RootWindow):
             body,
             on_drop=self.on_drop,
             on_click=self.add_files,
-            title=self.tr("import.drop_here", "Перетащите файлы сюда"),
-            hint=self.tr("import.drop_hint", "или воспользуйтесь кнопками выше"),
+            title=t("Перетащите файлы сюда"),
+            hint=t("или воспользуйтесь кнопками выше"),
         )
         self.drop_zone.grid(row=1, column=0, sticky="ew", pady=(GAP, 0))
 
@@ -251,7 +258,7 @@ class MainWindow(_RootWindow):
             on_select=self.select_file,
             on_remove=self.app.remove_file,
             on_check_changed=self._sync_action_bar,
-            empty_text=self.tr("import.empty", "Список файлов пуст"),
+            empty_text=t("Список файлов пуст"),
             height=124,
         )
         self.file_list.grid(row=2, column=0, sticky="nsew", pady=(GAP, 0))
@@ -261,12 +268,12 @@ class MainWindow(_RootWindow):
 
     def _build_tabs(self) -> None:
         names = {
-            "compress": self.tr("tab.compress", "Сжатие"),
-            "convert": self.tr("tab.convert", "Конвертация"),
-            "trim": self.tr("tab.trim", "Обрезка"),
-            "info": self.tr("tab.info", "Информация"),
-            "queue": self.tr("tab.queue", "Очередь"),
-            "settings": self.tr("tab.settings", "Настройки"),
+            "compress": t("Сжатие"),
+            "convert": t("Конвертация"),
+            "trim": t("Обрезка"),
+            "info": t("Информация"),
+            "queue": t("Очередь"),
+            "settings": t("Настройки"),
         }
         self._section_by_title = {title: key for key, title in names.items()}
         for key, title in names.items():
@@ -309,9 +316,9 @@ class MainWindow(_RootWindow):
 
         self.operation_tabs = (self.compress_tab, self.convert_tab, self.trim_tab, self.info_tab)
         self._start_tab_names = {
-            names["compress"]: self.tr("action.compress", "▶  Сжать"),
-            names["convert"]: self.tr("action.convert", "▶  Конвертировать"),
-            names["trim"]: self.tr("action.trim", "▶  Обрезать"),
+            names["compress"]: t("▶  Сжать"),
+            names["convert"]: t("▶  Конвертировать"),
+            names["trim"]: t("▶  Обрезать"),
         }
 
     def _build_action_bar(self) -> None:
@@ -329,7 +336,7 @@ class MainWindow(_RootWindow):
         # на что смотрят перед нажатием, и панель действий видна всегда.
         estimate_block = ctk.CTkFrame(body, fg_color="transparent")
         estimate_block.grid(row=0, column=1, sticky="e", padx=(0, 18))
-        muted(estimate_block, "Ожидаемый размер", anchor="e").grid(row=0, column=0, sticky="e")
+        muted(estimate_block, t("Ожидаемый размер"), anchor="e").grid(row=0, column=0, sticky="e")
         self.estimate_label = ctk.CTkLabel(
             estimate_block, text="—", anchor="e", font=font("body", bold=True)
         )
@@ -337,7 +344,7 @@ class MainWindow(_RootWindow):
 
         self.action_button = button(
             body,
-            self.tr("action.none", "▶  Запустить"),
+            t("▶  Запустить"),
             self._on_action_button,
             variant="primary",
             width=230,
@@ -349,7 +356,7 @@ class MainWindow(_RootWindow):
         # Склейка появляется только тогда, когда её есть из чего собрать:
         # для одного файла кнопка бессмысленна и место не занимает.
         self.join_button = button(
-            body, "⧉  Склеить", self.join_checked, width=130, height=40
+            body, t("⧉  Склеить"), self.join_checked, width=130, height=40
         )
         self.join_button.grid(row=0, column=2, sticky="e", padx=(0, 8))
         self.join_button.grid_remove()
@@ -452,26 +459,23 @@ class MainWindow(_RootWindow):
 
         if label is None:
             self.action_button.configure(
-                text=self.tr("action.none", "▶  Запустить"), state="disabled"
+                text=t("▶  Запустить"), state="disabled"
             )
             self.action_hint_label.configure(text="")
             return
 
         if checked >= 2:
             self.action_button.configure(
-                text=self.tr("action.batch", "▶  Обработать файлов: {n}").format(n=checked),
+                text=tf("▶  Обработать файлов: {n}", n=checked),
                 state="normal",
             )
             self.action_hint_label.configure(
-                text=self.tr(
-                    "action.batch_hint",
-                    "Настройки текущего раздела применятся ко всем отмеченным файлам",
-                )
+                text=t("Настройки текущего раздела применятся ко всем отмеченным файлам")
             )
         else:
             self.action_button.configure(text=label, state="normal")
             self.action_hint_label.configure(
-                text=self.tr("action.hint", "Ctrl+Enter — быстрый запуск")
+                text=t("Ctrl+Enter — быстрый запуск")
             )
 
     def _on_section_changed(self) -> None:
@@ -479,7 +483,7 @@ class MainWindow(_RootWindow):
         title = self.tabs.get()
         key = self._section_by_title.get(title, "")
         self.section_title.configure(text=title)
-        self.section_hint.configure(text=SECTION_HINTS.get(key, ""))
+        self.section_hint.configure(text=section_hints().get(key, ""))
 
         if key in FILE_SECTIONS:
             self.files_card.grid()
@@ -514,9 +518,9 @@ class MainWindow(_RootWindow):
             self.progress_card.grid_remove()
 
     def _build_status(self) -> None:
-        self.status_strip = StatusStrip(self, STATUS_CHIPS)
+        self.status_strip = StatusStrip(self, status_chips())
         self.status_strip.grid(row=1, column=0, sticky="ew")
-        self._set_status(self.tr("status.ready", "Готово"))
+        self._set_status(t("Готово"))
         self.status_strip.show("ffmpeg", "idle", "Поиск FFmpeg…")
         self.status_strip.show("gpu", "idle", "Определение видеоускорителя…")
         self.status_strip.show("job", "idle", "Заданий не выполняется")
@@ -534,7 +538,7 @@ class MainWindow(_RootWindow):
             "queue",
             health,
             f"Всего заданий: {len(jobs)}, выполняется: {len(pending)}",
-            f"Очередь: {len(jobs)}",
+            tf("Очередь: {count}", count=len(jobs)),
         )
 
     # -- события приложения --------------------------------------------------
@@ -573,12 +577,12 @@ class MainWindow(_RootWindow):
 
     # -- импорт -------------------------------------------------------------
     def add_files(self) -> None:
-        paths = filedialog.askopenfilenames(title=self.tr("import.add_file", "Добавить файл"))
+        paths = filedialog.askopenfilenames(title=t("Добавить файл"))
         if paths:
             self.app.import_paths(list(paths))
 
     def add_folder(self) -> None:
-        folder = filedialog.askdirectory(title=self.tr("import.add_folder", "Добавить папку"))
+        folder = filedialog.askdirectory(title=t("Добавить папку"))
         if folder:
             self.app.import_paths([folder])
 
@@ -610,14 +614,12 @@ class MainWindow(_RootWindow):
                 tab.set_file(None)
 
     def _import_started(self, count: int) -> None:
-        self._set_status(f"{self.tr('status.probing', 'Чтение информации о файлах…')} ({count})")
+        self._set_status(f"{t('Чтение информации о файлах…')} ({count})")
 
     def _import_finished(self, added: int, failed: int) -> None:
-        message = self.tr("import.done", "Импортировано файлов: {added}").format(added=added)
+        message = t("Импортировано файлов: {added}").format(added=added)
         if failed:
-            message += "   •   " + self.tr(
-                "import.failed", "Не распознано файлов: {failed}"
-            ).format(failed=failed)
+            message += "   •   " + t("Не распознано файлов: {failed}").format(failed=failed)
         self._set_status(message, "warning" if failed else "muted")
 
     def _capabilities_ready(self, capabilities) -> None:
@@ -626,9 +628,13 @@ class MainWindow(_RootWindow):
         self.settings_tab.update_ffmpeg_status()
         self.settings_tab.show_encoder_probe()
         self._set_status(
-            f"FFmpeg готов   •   энкодеров: {len(capabilities.encoders)}   •   "
-            f"контейнеров: {len(capabilities.muxers)}   •   "
-            f"аппаратное ускорение: {', '.join(capabilities.hwaccels) or '—'}"
+            tf(
+                "FFmpeg готов   •   энкодеров: {encoders}   •   контейнеров: "
+                "{muxers}   •   аппаратное ускорение: {hwaccels}",
+                encoders=len(capabilities.encoders),
+                muxers=len(capabilities.muxers),
+                hwaccels=", ".join(capabilities.hwaccels) or "—",
+            )
         )
         binaries = self.app.ffmpeg.binaries
         self.status_strip.show(
@@ -638,7 +644,7 @@ class MainWindow(_RootWindow):
             f"Энкодеров: {len(capabilities.encoders)}, контейнеров: {len(capabilities.muxers)}",
         )
         if not DND_AVAILABLE:
-            self.import_hint.configure(text="Drag & Drop недоступен (нет tkinterdnd2)")
+            self.import_hint.configure(text=t("Drag & Drop недоступен (нет tkinterdnd2)"))
 
     def _gpu_detected(self, gpus) -> None:
         from ..services.gpu_detector import status_caption, summarize
@@ -678,7 +684,7 @@ class MainWindow(_RootWindow):
             "Автоматическая загрузка FFmpeg из сети не выполняется.",
         )
         if answer:
-            path = filedialog.askopenfilename(title="Укажите путь к ffmpeg")
+            path = filedialog.askopenfilename(title=t("Укажите путь к ffmpeg"))
             if path:
                 directory = Path(path).parent
                 self.app.set_ffmpeg_paths(path, str(directory))
@@ -687,7 +693,7 @@ class MainWindow(_RootWindow):
             if binaries.available:
                 self.app.set_ffmpeg_paths(str(binaries.ffmpeg), str(binaries.ffprobe))
             else:
-                self._set_status(self.tr("error.ffmpeg_missing", "FFmpeg не найден."), "error")
+                self._set_status(t("FFmpeg не найден."), "error")
 
     def _job_added(self, job: Job) -> None:
         del job
@@ -701,7 +707,7 @@ class MainWindow(_RootWindow):
     def _job_started(self, job: Job) -> None:
         self._active_job = job
         self._show_progress(True)
-        self.progress_panel.start(f"{self.tr('status.encoding', 'Кодирование')}: {job.label}")
+        self.progress_panel.start(tf("Кодирование: {label}", label=job.label))
         self.status_strip.show("job", "busy", f"Выполняется: {job.label}")
         self.queue_tab.update_job(job)
         self._update_queue_chip()
@@ -718,7 +724,7 @@ class MainWindow(_RootWindow):
         self.queue_tab.refresh_queue()
         if job.status == JobStatus.COMPLETED.value:
             details = job.stats.report() if job.stats else ""
-            self.progress_panel.finish(f"{self.tr('status.completed', 'Завершено')}: {job.label}")
+            self.progress_panel.finish(f"{t('Завершено')}: {job.label}")
             self.status_strip.show("job", "ok", f"Завершено: {job.label}")
             self._set_status(
                 f"{job.label} → {Path(job.output_file).name}"
@@ -728,12 +734,12 @@ class MainWindow(_RootWindow):
             if details:
                 self._show_result(job, details)
         elif job.status == JobStatus.FAILED.value:
-            self.progress_panel.reset(self.tr("status.failed", "Ошибка"))
+            self.progress_panel.reset(t("Ошибка"))
             self.status_strip.show("job", "error", f"Ошибка: {job.label}")
-            self._set_status(f"{self.tr('status.failed', 'Ошибка')}: {job.label}", "error")
+            self._set_status(f"{t('Ошибка')}: {job.label}", "error")
             self._show_error(job)
         elif job.status == JobStatus.CANCELLED.value:
-            self.progress_panel.reset(self.tr("status.cancelled", "Отменено"))
+            self.progress_panel.reset(t("Отменено"))
             self.status_strip.show("job", "warning", f"Отменено: {job.label}")
         self._active_job = None
         self._update_queue_chip()
@@ -741,7 +747,7 @@ class MainWindow(_RootWindow):
     def _queue_idle(self) -> None:
         self.progress_panel.reset()
         self._show_progress(False)
-        self._set_status(self.tr("status.ready", "Готово"))
+        self._set_status(t("Готово"))
         self._update_queue_chip()
 
     # -- обновления ------------------------------------------------------------
@@ -751,7 +757,7 @@ class MainWindow(_RootWindow):
         if state.error or not state.available:
             self.update_button.grid_remove()
             return
-        self.update_button.configure(text=f"Обновление  ·  v{state.latest.version}")
+        self.update_button.configure(text=tf("Обновление  ·  v{version}", version=state.latest.version))
         self.update_button.grid()
         self._set_status(f"Доступно обновление: v{state.latest.version}", "info")
 
@@ -769,7 +775,7 @@ class MainWindow(_RootWindow):
             self,
             releases,
             self.app.updates,
-            title="Доступно обновление" if state.available else "История изменений",
+            title=t("Доступно обновление") if state.available else "История изменений",
             on_history=(lambda: self.show_updates(only_new=False)) if only_new else None,
         )
         window.after(200, window.focus)
@@ -885,9 +891,9 @@ class MainWindow(_RootWindow):
 
     def _show_error(self, job: Job) -> None:
         """Раздел 27."""
-        window = self._dialog(self.tr("error.title", "Ошибка"), "720x480")
+        window = self._dialog(t("Ошибка"), "720x480")
 
-        card = Card(window, title=self.tr("error.title", "Ошибка"), subtitle=job.label)
+        card = Card(window, title=t("Ошибка"), subtitle=job.label)
         card.grid(row=0, column=0, sticky="nsew", padx=PAGE_PAD, pady=(PAGE_PAD, 0))
         card.body.grid_rowconfigure(0, weight=1)
 
@@ -901,23 +907,23 @@ class MainWindow(_RootWindow):
         buttons.grid_columnconfigure(2, weight=1)
         button(
             buttons,
-            self.tr("error.show_log", "Показать технический лог"),
+            t("Показать технический лог"),
             lambda: self.queue_tab.open_log(job),
         ).grid(row=0, column=0)
         button(
             buttons,
-            self.tr("error.copy", "Копировать"),
+            t("Копировать"),
             lambda: self.queue_tab.copy_to_clipboard(job.error or ""),
         ).grid(row=0, column=1, padx=8)
         button(
-            buttons, self.tr("common.close", "Закрыть"), window.destroy, variant="primary"
+            buttons, t("Закрыть"), window.destroy, variant="primary"
         ).grid(row=0, column=3, sticky="e")
 
     def _show_result(self, job: Job, details: str) -> None:
         """Раздел 53."""
-        window = self._dialog(self.tr("result.title", "Результат"), "480x560")
+        window = self._dialog(t("Результат"), "480x560")
 
-        card = Card(window, title=self.tr("result.title", "Готово"), subtitle=job.label)
+        card = Card(window, title=t("Готово"), subtitle=job.label)
         card.grid(row=0, column=0, sticky="nsew", padx=PAGE_PAD, pady=(PAGE_PAD, 0))
         card.body.grid_rowconfigure(0, weight=1)
 
@@ -933,11 +939,11 @@ class MainWindow(_RootWindow):
 
         button(
             buttons,
-            self.tr("result.open_folder", "Открыть папку"),
+            t("Открыть папку"),
             lambda: open_folder(Path(job.output_file)),
         ).grid(row=0, column=0)
         button(
-            buttons, self.tr("common.close", "Закрыть"), window.destroy, variant="primary"
+            buttons, t("Закрыть"), window.destroy, variant="primary"
         ).grid(row=0, column=2, sticky="e")
 
     def show_logs(self) -> None:
@@ -949,7 +955,7 @@ class MainWindow(_RootWindow):
             text = f"Лог недоступен: {exc}"
         window = self._dialog("Лог FFmpeg", "980x640")
 
-        card = Card(window, title="Лог FFmpeg", subtitle=str(path))
+        card = Card(window, title=t("Лог FFmpeg"), subtitle=str(path))
         card.grid(row=0, column=0, sticky="nsew", padx=PAGE_PAD, pady=(PAGE_PAD, 0))
         card.body.grid_rowconfigure(0, weight=1)
 
@@ -959,19 +965,19 @@ class MainWindow(_RootWindow):
         textbox.configure(state="disabled")
 
         button(
-            window, self.tr("common.close", "Закрыть"), window.destroy, variant="primary"
+            window, t("Закрыть"), window.destroy, variant="primary"
         ).grid(row=1, column=0, pady=PAGE_PAD)
 
     def show_help(self) -> None:
         """F1 — краткая справка и горячие клавиши."""
-        window = self._dialog(self.tr("app.help", "Справка"), "640x740")
+        window = self._dialog(t("Справка"), "640x740")
         # Растягивается только пустое место под карточками: сами карточки
         # должны показывать все строки, а не обрезать последнюю.
         window.grid_rowconfigure(0, weight=0)
         window.grid_rowconfigure(1, weight=0)
         window.grid_rowconfigure(2, weight=1)
 
-        steps = Card(window, title="Порядок работы")
+        steps = Card(window, title=t("Порядок работы"))
         steps.grid(row=0, column=0, sticky="ew", padx=PAGE_PAD, pady=(PAGE_PAD, GAP))
         for index, text in enumerate(
             (
@@ -990,7 +996,7 @@ class MainWindow(_RootWindow):
                 font=font("body"),
             ).grid(row=index, column=0, sticky="ew", pady=1)
 
-        shortcuts = Card(window, title="Горячие клавиши")
+        shortcuts = Card(window, title=t("Горячие клавиши"))
         shortcuts.grid(row=1, column=0, sticky="ew", padx=PAGE_PAD, pady=(0, GAP))
         shortcuts.label_grid()
         for index, (keys, description) in enumerate(
@@ -1012,17 +1018,17 @@ class MainWindow(_RootWindow):
 
         muted(
             window,
-            "Значок ⓘ рядом с параметром открывает расширенную справку.",
+            t("Значок ⓘ рядом с параметром открывает расширенную справку."),
         ).grid(row=2, column=0, sticky="w", padx=PAGE_PAD + 4)
 
         button(
-            window, self.tr("common.close", "Закрыть"), window.destroy, variant="primary"
+            window, t("Закрыть"), window.destroy, variant="primary"
         ).grid(row=3, column=0, pady=PAGE_PAD)
 
     def save_project(self) -> None:
         """Ctrl+S — сохранение списка файлов и текущих настроек."""
         path = filedialog.asksaveasfilename(
-            title="Сохранить проект", defaultextension=".ffgui", initialfile="project.ffgui"
+            title=t("Сохранить проект"), defaultextension=".ffgui", initialfile="project.ffgui"
         )
         if not path:
             return

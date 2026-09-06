@@ -25,7 +25,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.8.0"
 SETTINGS_VERSION = 1
 
 #: Репозиторий обновлений: пока не задан, проверка при запуске молчит.

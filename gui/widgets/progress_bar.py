@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ...core.models import ProgressInfo
 from ..theming import font, pair
 from .surface import button
@@ -49,7 +50,7 @@ class ProgressPanel(ctk.CTkFrame):
         self.detail_label.grid(row=2, column=0, sticky="ew")
 
         self.cancel_button = button(
-            self, "Отмена", self._on_cancel, variant="danger", compact=True, width=90
+            self, t("Отмена"), self._on_cancel, variant="danger", compact=True, width=90
         )
         self.cancel_button.grid(row=0, column=1, rowspan=3, padx=(12, 0))
         self.cancel_button.grid_remove()

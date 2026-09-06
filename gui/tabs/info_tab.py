@@ -6,6 +6,7 @@ import json
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ...core.models import MediaFile, format_bitrate, format_size, format_timecode
 from ..theming import font
 from ..widgets.surface import GAP, Card, button
@@ -20,7 +21,7 @@ class InfoTab(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.card = Card(self, title="Сведения о файле")
+        self.card = Card(self, title=t("Сведения о файле"))
         self.card.grid(row=0, column=0, sticky="nsew", pady=(0, GAP))
         self.card.body.grid_rowconfigure(0, weight=1)
 
@@ -30,9 +31,9 @@ class InfoTab(ctk.CTkFrame):
         buttons = ctk.CTkFrame(self.card.body, fg_color="transparent")
         buttons.grid(row=1, column=0, sticky="ew", pady=(GAP, 0))
         buttons.grid_columnconfigure(2, weight=1)
-        button(buttons, "Копировать как текст", self._copy_text).grid(row=0, column=0)
-        button(buttons, "Копировать как JSON", self._copy_json).grid(row=0, column=1, padx=8)
-        button(buttons, "Обновить", self._reprobe, variant="ghost").grid(
+        button(buttons, t("Копировать как текст"), self._copy_text).grid(row=0, column=0)
+        button(buttons, t("Копировать как JSON"), self._copy_json).grid(row=0, column=1, padx=8)
+        button(buttons, t("Обновить"), self._reprobe, variant="ghost").grid(
             row=0, column=3, sticky="e"
         )
 

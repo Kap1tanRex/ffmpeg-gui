@@ -13,6 +13,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+from ..core.i18n import t, tf
 from .ffmpeg_service import creation_flags
 
 log = logging.getLogger(__name__)
@@ -197,14 +198,14 @@ def hardware_suffixes_for_vendor(vendor: str) -> tuple[str, ...]:
 def summarize(gpus: list[GpuInfo]) -> str:
     """Строка для настроек и подсказки: карта, производитель и драйвер."""
     if not gpus:
-        return "Видеокарты не обнаружены"
+        return t("Видеокарты не обнаружены")
     parts: list[str] = []
     for gpu in gpus:
         text = gpu.name
         if gpu.vendor != "UNKNOWN":
             text += f" ({gpu.vendor})"
         if gpu.driver:
-            text += f", драйвер {gpu.driver}"
+            text += tf(", драйвер {driver}", driver=gpu.driver)
         parts.append(text)
     return ", ".join(parts)
 

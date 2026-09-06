@@ -15,6 +15,7 @@ import logging
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ..theming import font, pair, radius
 
 log = logging.getLogger(__name__)

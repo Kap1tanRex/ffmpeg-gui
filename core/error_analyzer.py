@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
+from .i18n import t
 from enum import Enum
 
 
@@ -36,12 +38,12 @@ class AnalyzedError:
     hint: str = ""
 
     def report(self) -> str:
-        parts = [self.reason]
+        parts = [t(self.reason)]
         if self.hint:
-            parts.append(f"Совет: {self.hint}")
+            parts.append(t("Совет: ") + t(self.hint))
         if self.technical:
             parts.append("")
-            parts.append("Технический лог:")
+            parts.append(t("Технический лог:"))
             parts.append(self.technical)
         return "\n".join(parts)
 

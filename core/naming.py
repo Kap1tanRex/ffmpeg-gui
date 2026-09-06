@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from .i18n import t
+
 #: Что подставляется по умолчанию: имя исходника и суффикс операции —
 #: ровно то поведение, что было до появления шаблонов.
 DEFAULT_TEMPLATE = "{имя}{суффикс}"
@@ -65,7 +67,7 @@ def name_values(
 ) -> dict[str, str]:
     """Собирает значения токенов; пустые остаются пустыми строками."""
     moment = moment or datetime.now()
-    return {
+    values = {
         "имя": stem,
         "суффикс": suffix,
         "кодек": codec if codec and codec != "auto" else "",
@@ -76,3 +78,8 @@ def name_values(
         "дата": moment.strftime("%Y-%m-%d"),
         "время": moment.strftime("%H-%M"),
     }
+    # Шаблон пишет пользователь, и на английском он напишет {name}, а не
+    # {имя}. Оба набора имён понимаются одновременно, поэтому шаблон,
+    # сохранённый на одном языке, продолжает работать на другом.
+    values.update({t(name): value for name, value in values.items()})
+    return values

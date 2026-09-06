@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ..theming import font, pair
 from ..widgets.surface import PAGE_PAD, Card, button
 
@@ -23,7 +24,7 @@ def show_command(master, command: str, title: str = "Команда FFmpeg") -> 
     window.grid_columnconfigure(0, weight=1)
     window.grid_rowconfigure(0, weight=1)
 
-    card = Card(window, title=title, subtitle="Ровно то, что будет запущено")
+    card = Card(window, title=title, subtitle=t("Ровно то, что будет запущено"))
     card.grid(row=0, column=0, sticky="nsew", padx=PAGE_PAD, pady=(PAGE_PAD, 0))
     card.body.grid_rowconfigure(0, weight=1)
 
@@ -40,6 +41,6 @@ def show_command(master, command: str, title: str = "Команда FFmpeg") -> 
         window.clipboard_clear()
         window.clipboard_append(command)
 
-    button(buttons, "Копировать", copy).grid(row=0, column=0)
-    button(buttons, "Закрыть", window.destroy, variant="primary").grid(row=0, column=2, sticky="e")
+    button(buttons, t("Копировать"), copy).grid(row=0, column=0)
+    button(buttons, t("Закрыть"), window.destroy, variant="primary").grid(row=0, column=2, sticky="e")
     return window

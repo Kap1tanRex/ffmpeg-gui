@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .i18n import t
+
 #: Роли строк подсказки. Совпадают с именами стилей в ``gui.widgets.hint``.
 TITLE, BODY, VALUES, EFFECT, WARNING = "title", "body", "values", "effect", "warning"
 
@@ -29,8 +31,12 @@ class HelpEntry:
     warning: str = ""
 
     def sections(self) -> list[tuple[str, str]]:
-        """Строки подсказки как (роль, текст) — для оформления по ролям."""
-        parts = [(TITLE, self.brief)]
+        """Строки подсказки как (роль, текст) — для оформления по ролям.
+
+        Перевод делается здесь, на выходе: в реестре текст лежит на исходном
+        языке, и оборачивать каждое из сотни полей не требуется.
+        """
+        parts = [(TITLE, t(self.brief))]
         for role, text in (
             (BODY, self.detailed),
             (VALUES, self.values),
@@ -38,12 +44,12 @@ class HelpEntry:
             (WARNING, self.warning),
         ):
             if text:
-                parts.append((role, text))
+                parts.append((role, t(text)))
         return parts
 
     def text(self) -> str:
         """Тот же текст сплошняком — для мест, где оформления нет."""
-        lines = [self.brief]
+        lines = [t(self.brief)]
         for prefix, text in (
             ("", self.detailed),
             ("Значения: ", self.values),
@@ -51,7 +57,7 @@ class HelpEntry:
             ("⚠ ", self.warning),
         ):
             if text:
-                lines.append(prefix + text)
+                lines.append(t(prefix) + t(text))
         return "\n\n".join(lines)
 
 
@@ -96,8 +102,8 @@ def crf_quality(crf: float | None, codec: str | None = None) -> tuple[str, str]:
     normalized = float(crf) * 51.0 / high
     for bound, label, severity in _CRF_SCALE:
         if normalized <= bound:
-            return label, severity
-    return _CRF_SCALE[-1][1], _CRF_SCALE[-1][2]
+            return t(label), severity
+    return t(_CRF_SCALE[-1][1]), _CRF_SCALE[-1][2]
 
 
 class HelpRegistry:
@@ -119,6 +125,10 @@ class HelpRegistry:
 
     def encoder_hint(self, encoder: str) -> str:
         """Раздел 32: контекстная подсказка для конкретного энкодера."""
+        return t(self._encoder_hint(encoder))
+
+    @staticmethod
+    def _encoder_hint(encoder: str) -> str:
         if encoder.endswith("_nvenc"):
             return (
                 "NVIDIA NVENC — кодирует отдельный блок видеокарты. В 5–15 раз "

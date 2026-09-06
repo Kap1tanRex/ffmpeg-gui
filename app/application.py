@@ -29,6 +29,7 @@ from ..core.models import (
     TrimOptions,
     VideoOptions,
 )
+from ..core.i18n import set_language
 from ..core.naming import name_values
 from ..core.profiles import ProfileManager
 from ..core.validator import ValidationResult, Validator
@@ -60,34 +61,6 @@ from .state import APP_VERSION, AppState, SettingsStore
 log = logging.getLogger(__name__)
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-TRANSLATIONS_DIR = PACKAGE_ROOT / "resources" / "translations"
-
-
-class Translator:
-    """Локализация интерфейса (раздел 55)."""
-
-    def __init__(self, language: str = "ru") -> None:
-        self.language = language
-        self._strings: dict[str, str] = {}
-        self.load(language)
-
-    def load(self, language: str) -> None:
-        self.language = language
-        path = TRANSLATIONS_DIR / f"{language}.json"
-        try:
-            self._strings = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            log.warning("Перевод %s не загружен: %s", language, exc)
-            self._strings = {}
-
-    def __call__(self, key: str, default: str | None = None) -> str:
-        return self._strings.get(key, default if default is not None else key)
-
-    @staticmethod
-    def available_languages() -> list[str]:
-        if not TRANSLATIONS_DIR.is_dir():
-            return ["ru"]
-        return sorted(path.stem for path in TRANSLATIONS_DIR.glob("*.json"))
 
 
 class Application:
@@ -98,7 +71,8 @@ class Application:
         self.store = SettingsStore(settings_dir)
         self.settings = self.store.load()
         self.state = AppState(settings=self.settings)
-        self.translator = Translator(self.settings.language)
+        # Язык ставится первым: подписи читаются при постройке виджетов.
+        set_language(self.settings.language)
 
         self._setup_logging()
 
@@ -641,8 +615,6 @@ class Application:
                 setattr(self.settings, key, value)
         self.store.save(self.settings)
         self.queue.set_parallel_jobs(self.settings.parallel_jobs)
-        if self.translator.language != self.settings.language:
-            self.translator.load(self.settings.language)
         self.bus.publish(Event.SETTINGS_CHANGED, self.settings)
 
     # -- диагностика (раздел 47) ---------------------------------------------

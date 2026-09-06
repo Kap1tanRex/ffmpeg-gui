@@ -15,6 +15,7 @@ from pathlib import Path
 
 import customtkinter as ctk
 
+from ...core.i18n import t
 from ...core.models import Job, JobStatus, ProgressInfo
 from ..theming import font, pair, radius
 from ..widgets.status_strip import DOT, health_color
@@ -71,20 +72,20 @@ class QueueTab(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.card = Card(self, title="Задания")
+        self.card = Card(self, title=t("Задания"))
         self.card.grid(row=0, column=0, sticky="nsew", pady=(0, GAP))
         self.card.body.grid_rowconfigure(1, weight=1)
 
         toolbar = ctk.CTkFrame(self.card.body, fg_color="transparent")
         toolbar.grid(row=0, column=0, sticky="ew")
         toolbar.grid_columnconfigure(1, weight=1)
-        button(toolbar, "Очистить завершённые", self._clear_finished).grid(row=0, column=0)
+        button(toolbar, t("Очистить завершённые"), self._clear_finished).grid(row=0, column=0)
 
         self.list_frame = ScrollFrame(self.card.body, fg_color="transparent")
         self.list_frame.grid(row=1, column=0, sticky="nsew", pady=(GAP, 0))
         self.list_frame.grid_columnconfigure(0, weight=1)
 
-        self.empty_label = muted(self.list_frame, "Очередь пуста — задания появятся здесь")
+        self.empty_label = muted(self.list_frame, t("Очередь пуста — задания появятся здесь"))
         self.empty_label.grid(row=0, column=0, sticky="w", padx=4, pady=8)
 
     # -- обновления ------------------------------------------------------
@@ -158,16 +159,16 @@ class QueueTab(ctk.CTkFrame):
         buttons.grid(row=3, column=0, columnspan=3, sticky="w", padx=8, pady=(2, 8))
 
         cancel_btn = button(
-            buttons, "Отмена", lambda: self.app.queue.cancel(job.id), compact=True, width=80
+            buttons, t("Отмена"), lambda: self.app.queue.cancel(job.id), compact=True, width=80
         )
         cancel_btn.grid(row=0, column=0, padx=4)
 
-        retry_btn = button(buttons, "Повторить", lambda: self._retry(job), compact=True, width=90)
+        retry_btn = button(buttons, t("Повторить"), lambda: self._retry(job), compact=True, width=90)
         retry_btn.grid(row=0, column=1, padx=4)
 
         remove_btn = button(
             buttons,
-            "Удалить",
+            t("Удалить"),
             lambda: (self.app.queue.remove(job.id), self.refresh_queue()),
             variant="danger",
             compact=True,
@@ -176,13 +177,13 @@ class QueueTab(ctk.CTkFrame):
         remove_btn.grid(row=0, column=2, padx=4)
 
         log_btn = button(
-            buttons, "Лог", lambda: self.open_log(job), variant="ghost", compact=True, width=60
+            buttons, t("Лог"), lambda: self.open_log(job), variant="ghost", compact=True, width=60
         )
         log_btn.grid(row=0, column=3, padx=4)
 
         folder_btn = button(
             buttons,
-            "Папка",
+            t("Папка"),
             lambda: open_folder(Path(job.output_file)),
             variant="ghost",
             compact=True,

@@ -9,6 +9,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .i18n import t
+
+def labelled(source: dict[str, str]) -> dict[str, str]:
+    """Тот же словарь, но с переведёнными подписями.
+
+    Ключ словаря — подпись в интерфейсе, значение — выражение FFmpeg или код.
+    Переводится ключ, значение остаётся машинным.
+    """
+    return {t(label): value for label, value in source.items()}
+
+
 #: Поворот: подпись -> выражение FFmpeg. transpose=1 — по часовой стрелке.
 ROTATIONS: dict[str, str] = {
     "Без поворота": "",
